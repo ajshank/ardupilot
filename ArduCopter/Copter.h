@@ -971,7 +971,7 @@ private:
 #if MODE_ZIGZAG_ENABLED == ENABLED
     ModeZigZag mode_zigzag;
 #endif
-#if MODE_COMPCTRL_ENABLED == ENABLED
+#if MODE_GUIDED_ENABLED == ENABLED
     ModeComputer mode_computer;
 #endif    
 
