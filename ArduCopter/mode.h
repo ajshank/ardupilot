@@ -1189,3 +1189,56 @@ private:
 
     uint32_t reach_wp_time_ms = 0;  // time since vehicle reached destination (or zero if not yet reached)
 };
+
+/*
+Class definition for computer control mode - similar to Guided/Guided-noGPS
+modes, but does not use barometric mode for flying, i.e., allows thrust to be
+commanded directly.
+Nimbus Lab.
+-- aj / Dec 21, 2018.
+This day is unusally short.. :)
+*/
+class ModeComputer : public Mode {
+
+public:
+    // inherit constructor
+    using Copter::Mode::Mode;
+
+    bool init(bool ignore_checks) override;
+    void run() override;
+
+    bool requires_GPS() const override { return false; }
+    bool has_manual_throttle() const override { return false; }
+    bool allows_arming(bool from_gcs) const override { return from_gcs; }
+    bool is_autopilot() const override { return true; }
+    bool in_guided_mode() const override { return true; }
+    bool has_user_takeoff(bool must_navigate) const override { return true; }
+
+    void set_targets(const Quaternion &q, float collective, bool use_yaw_rate, float yaw_rate_rads);
+
+    void limit_clear();
+    void limit_init_time_and_pos();
+    void limit_set(uint32_t timeout_ms, float alt_min_cm, float alt_max_cm, float horiz_max_cm);
+    bool limit_check();
+
+    //bool do_user_takeoff_start(float final_alt_above_home) override;
+
+    //GuidedMode mode() const { return guided_mode; }
+
+    void computer_control_run();
+
+protected:
+
+    const char *name() const override { return "COMP_CTRL"; }
+    const char *name4() const override { return "CCTL"; }
+
+    //uint32_t wp_distance() const override;
+    //int32_t wp_bearing() const override;
+    //float crosstrack_error() const override;
+
+private:
+
+    // controls which controller is run (pos or vel):
+    //GuidedMode guided_mode = Guided_TakeOff;
+
+};

@@ -971,6 +971,9 @@ private:
 #if MODE_ZIGZAG_ENABLED == ENABLED
     ModeZigZag mode_zigzag;
 #endif
+#if MODE_COMPCTRL_ENABLED == ENABLED
+    ModeComputer mode_computer;
+#endif    
 
     // mode.cpp
     Mode *mode_from_mode_num(const uint8_t mode);

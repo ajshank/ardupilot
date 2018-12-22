@@ -362,6 +362,12 @@
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
+// ZigZag - allow vehicle to fly in a zigzag manner with predefined point A B
+#ifndef MODE_COMPCTRL_ENABLED
+# define MODE_COMPCTRL_ENABLED !HAL_MINIMIZE_FEATURES
+#endif
+
+//////////////////////////////////////////////////////////////////////////////
 // Beacon support - support for local positioning systems
 #ifndef BEACON_ENABLED
 # define BEACON_ENABLED !HAL_MINIMIZE_FEATURES

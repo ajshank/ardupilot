@@ -163,6 +163,12 @@ Copter::Mode *Copter::mode_from_mode_num(const uint8_t mode)
             break;
 #endif
 
+#if MODE_COMPCTRL_ENABLED == ENABLED
+        case COMP_CTRL:
+            ret = &mode_computer;
+            break;
+#endif
+
         default:
             break;
     }
