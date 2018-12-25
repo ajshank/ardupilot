@@ -29,6 +29,7 @@ void Copter::ModeComputer::set_targets( const Quaternion &q, float collective,
               computer_cmd_state.yaw_cmd );
   computer_cmd_state.roll_cmd = ToDeg( computer_cmd_state.roll_cmd ) * 100.0f;
   computer_cmd_state.pitch_cmd = ToDeg( computer_cmd_state.pitch_cmd ) * 100.0f;
+  computer_cmd_state.collective_cmd = collective;
   computer_cmd_state.yaw_cmd = ToDeg( computer_cmd_state.yaw_cmd ) * 100.0f;
   computer_cmd_state.yaw_rate_cmd = ToDeg( yaw_rate_rads ) * 100.0f;
   computer_cmd_state.use_yaw_rate = use_yaw_rate;

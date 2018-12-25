@@ -364,7 +364,7 @@
 //////////////////////////////////////////////////////////////////////////////
 // ZigZag - allow vehicle to fly in a zigzag manner with predefined point A B
 #ifndef MODE_COMPCTRL_ENABLED
-# define MODE_COMPCTRL_ENABLED !HAL_MINIMIZE_FEATURES
+# define MODE_COMPCTRL_ENABLED ENABLED
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
