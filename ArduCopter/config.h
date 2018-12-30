@@ -362,7 +362,7 @@
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
-// ZigZag - allow vehicle to fly in a zigzag manner with predefined point A B
+// Computer Control - allow computer to send attitute and throttle (raw thrust)
 #ifndef MODE_COMPCTRL_ENABLED
 # define MODE_COMPCTRL_ENABLED ENABLED
 #endif

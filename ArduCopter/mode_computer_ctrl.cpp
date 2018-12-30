@@ -2,15 +2,16 @@
 
 /*
  Init and run calls for computer controlled flight mode.
- Sadly, the code follows a structure similar to the original
- god-forsaken structure found in the arducopter code - which I find needlessly
- obfuscated and oftentimes downright unwelcoming.
- Nimbus Lab.
+This mode allows a computer to command attitude and direct thrust targets
+(as opposed to climb rate). Useful for writing high-level outer loops.
+
+Nimbus Lab.
  -- aj / Dec 21, 2018.
  */
 #define COMPUTER_ATTITUDE_TIMEOUT_MS 500
 struct {
     // pretty sure that angles are in centidegrees
+    // @TODO: clean up and use quaternions directly
     uint32_t update_time_ms;
     float roll_cmd;
     float pitch_cmd;
@@ -25,6 +26,8 @@ void Copter::ModeComputer::set_targets( const Quaternion &q, float collective,
                                        bool use_yaw_rate, float yaw_rate_rads )
 {
   // copy over the values into the "global" struct declared in this file
+  // @TODO: can avoid all this by calling attitude_control's input_quaternion(..)
+  // @TODO: check how to control yaw rate, if using the above.
   q.to_euler( computer_cmd_state.roll_cmd, computer_cmd_state.pitch_cmd,
               computer_cmd_state.yaw_cmd );
   computer_cmd_state.roll_cmd = ToDeg( computer_cmd_state.roll_cmd ) * 100.0f;
@@ -95,6 +98,7 @@ void Copter::ModeComputer::computer_control_run()
   
   float collective_in = computer_cmd_state.collective_cmd;
   // @TODO: check for thrust range
+  collective_in = motors->apply_thrust_curve_and_volt_scaling( collective_in );
   
   // check for timeout - set lean angles and climb rate to zero if no updates received for 3 seconds
   uint32_t tnow = millis();
@@ -118,9 +122,9 @@ void Copter::ModeComputer::computer_control_run()
     attitude_control->input_euler_angle_roll_pitch_yaw(roll_in, pitch_in, yaw_in, true);
   }
   
-  // do thrust control, do not compensate for tilt, and apply standard filter len
+  // do thrust control, do not compensate for tilt, and apply standard filter len.
   // "g" is a variable inside Mode class, of type Parameters. Fantastic choice of
-  // a name, I tell you! Try grepping for that.
+  // a name for a variable. :)
   attitude_control->set_throttle_out( collective_in, false, g.throttle_filt );
 }
 
