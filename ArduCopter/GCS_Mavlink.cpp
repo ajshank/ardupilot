@@ -1092,6 +1092,7 @@ void GCS_MAVLINK_Copter::handleMessage(mavlink_message_t* msg)
 
         // convert thrust to climb rate
         packet.thrust = constrain_float(packet.thrust, 0.0f, 1.0f);
+        
         float climb_rate_cms = 0.0f;
         if (is_equal(packet.thrust, 0.5f)) {
             climb_rate_cms = 0.0f;
@@ -1104,12 +1105,14 @@ void GCS_MAVLINK_Copter::handleMessage(mavlink_message_t* msg)
         }
 
         // if the body_yaw_rate field is ignored, use the commanded yaw position
-        // otherwise use the commanded yaw rate
+        // otherwise use the commanded yaw rate. Computer mode sends a true mask
+        // for yaw-rate.
         bool use_yaw_rate = false;
         if ((packet.type_mask & (1<<2)) == 0) {
             use_yaw_rate = true;
         }
 
+        // guided modes can still function the same
         copter.mode_guided.set_angle(Quaternion(packet.q[0],packet.q[1],packet.q[2],packet.q[3]),
             climb_rate_cms, use_yaw_rate, packet.body_yaw_rate);
             
