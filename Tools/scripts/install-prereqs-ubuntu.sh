@@ -9,9 +9,15 @@ PYTHON_PKGS="future lxml pymavlink MAVProxy"
 PX4_PKGS="python-argparse openocd flex bison libncurses5-dev \
           autoconf texinfo libftdi-dev zlib1g-dev \
           zip genromfs python-empy cmake cmake-data"
-ARM_LINUX_PKGS="g++-arm-linux-gnueabihf pkg-config-arm-linux-gnueabihf"
+# Debian packages don't seem to have pkg-config-arm-linux-gnueabihf
+if lsb_release -a 2> /dev/null | grep -c "Debian"; then
+  ARM_LINUX_PKGS="g++-arm-linux-gnueabihf"
+  echo "Make sure to go through the nimbus-readme-debian!"
+else
+  ARM_LINUX_PKGS="g++-arm-linux-gnueabihf pkg-config-arm-linux-gnueabihf"
+fi
 # python-wxgtk packages are added to SITL_PKGS below
-SITL_PKGS="libtool libxml2-dev libxslt1-dev python-dev python-pip python-setuptools python-matplotlib python-serial python-scipy python-opencv python-numpy python-pyparsing xterm"
+SITL_PKGS="libtool libxml2-dev libxslt1-dev python-dev python-pip python-setuptools python-matplotlib python-serial python-scipy python-numpy python-pyparsing xterm"
 ASSUME_YES=false
 QUIET=false
 
