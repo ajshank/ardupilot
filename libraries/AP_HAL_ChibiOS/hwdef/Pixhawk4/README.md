@@ -1,16 +1,16 @@
 # Pixhawk4 Flight Controller
 
-The Pixhawk4 flight controller is sold by [Holybro](http://www.holybro.com/product/55)
+The Pixhawk4 flight controller is sold by [Holybro](http://www.holybro.com/product/pixhawk-4)
 
 ## Features
 
  - STM32F765 microcontroller
  - Two IMUs: ICM20689 and BMI055
  - MS5611 SPI barometer
- - builtin SPI IST8310 magnetometer
+ - builtin I2C IST8310 magnetometer
  - microSD card slot
  - 6 UARTs plus USB
- - 14 PWM outputs
+ - 16 PWM outputs
  - Four I2C and two CAN ports
  - External Buzzer
  - external safety Switch
@@ -27,7 +27,7 @@ The Pixhawk4 flight controller is sold by [Holybro](http://www.holybro.com/produ
  - SERIAL1 -> UART2 (Telem1)
  - SERIAL2 -> UART3 (Telem2)
  - SERIAL3 -> UART1 (GPS)
- - SERIAL4 -> UART4 (GPS2)
+ - SERIAL4 -> UART4 (GPS2, marked UART/I2CB)
  - SERIAL5 -> UART6 (spare)
  - SERIAL6 -> UART7 (spare, debug)
 
@@ -36,6 +36,111 @@ have RTS/CTS.
 
 The UART7 connector is labelled debug, but is available as a general
 purpose UART with ArduPilot.
+
+### TELEM1, TELEM2 ports
+
+   <table border="1" class="docutils">
+   <tbody>
+   <tr>
+   <th>Pin </th>
+   <th>Signal </th>
+   <th>Volt </th>
+   </tr>
+   <tr>
+   <td>1 (red)</td>
+   <td>VCC</td>
+   <td>+5V</td>
+   </tr>
+   <tr>
+   <td>2 (blk)</td>
+   <td>TX (OUT)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>3 (blk)</td>
+   <td>RX (IN)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>4 (blk)</td>
+   <td>CTS</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>5 (blk)</td>
+   <td>RTS</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>6 (blk)</td>
+   <td>GND</td>
+   <td>GND</td>
+   </tr>
+   </tbody>
+   </table>
+
+
+### GPS port
+
+   <table border="1" class="docutils">
+   <tbody>
+   <tr>
+   <th>Pin </th>
+   <th>Signal </th>
+   <th>Volt </th>
+   </tr>
+   <tr>
+   <td>1 (red)</td>
+   <td>VCC</td>
+   <td>+5V</td>
+   </tr>
+   <tr>
+   <td>2 (blk)</td>
+   <td>SERIAL3 TX (OUT)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>3 (blk)</td>
+   <td>SERIAL3 RX (IN)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>4 (blk)</td>
+   <td>SCL</td>
+   <td>+3.3 (pullups)</td>
+   </tr>
+   <tr>
+   <td>5 (blk)</td>
+   <td>SDA</td>
+   <td>+3.3 (pullups)</td>
+   </tr>
+   <tr>
+   <td>6 (blk)</td>
+   <td>SafetyButton</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>7 (blk)</td>
+   <td>SafetyLED</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>8 (blk)</td>
+   <td>VDD 3.3 (OUT)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>9 (blk)</td>
+   <td>Buzzer</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>10 (blk)</td>
+   <td>GND</td>
+   <td>GND</td>
+   </tr>
+   </tbody>
+   </table>
 
 ## RC Input
  
@@ -52,7 +157,7 @@ outputs support all PWM output formats, but not DShot.
 
 The remaining 8 outputs (labelled AUX1 to AUX8) are the "auxillary"
 outputs. These are directly attached to the STM32F765 and support all
-PWM protocols. The first 6 of the auxillary PWM outputs support DShot.
+PWM protocols. The first 4 of the auxillary PWM outputs support DShot.
 
 The 8 main PWM outputs are in 3 groups:
 
@@ -60,7 +165,7 @@ The 8 main PWM outputs are in 3 groups:
  - PWM 3 and 4 in group2
  - PWM 5, 6, 7 and 8 in group3
 
-The 8 auxillary PWM outputs are in 2 groups:
+The 8 auxillary PWM outputs are in 3 groups:
 
  - PWM 1, 2, 3 and 4 in group1
  - PWM 5 and 6 in group2
@@ -112,6 +217,168 @@ The Pixhawk4 has 7 analog inputs
  - ADC Pin10 -> ADC 5V Sense
  - ADC Pin11 -> ADC 3.3V Sense
  - ADC Pin103 -> RSSI voltage monitoring
+
+## I2C Buses
+
+ - the internal I2C port is bus 0 in ArduPilot (I2C3 in hardware)
+ - the port labelled I2CA is bus 3 in ArduPilot (I2C4 in hardware)
+ - the port labelled I2CB is bus 2 in ArduPilot (I2c2 in hardware)
+ - the port labelled GPS is bus 1 in ArduPilot (I2c1 in hardware)
+
+### Pinout for I2CA
+
+   <table border="1" class="docutils">
+   <tbody>
+   <tr>
+   <th>Pin</th>
+   <th>Signal</th>
+   <th>Volt</th>
+   </tr>
+   <tr>
+   <td>1 (red)</td>
+   <td>VCC</td>
+   <td>+5V</td>
+   </tr>
+   <tr>
+   <td>2 (blk)</td>
+   <td>SCL</td>
+   <td>+3.3 (pullups)</td>
+   </tr>
+   <tr>
+   <td>3 (blk)</td>
+   <td>SDA</td>
+   <td>+3.3 (pullups)</td>
+   </tr>
+   <tr>
+   <td>4 (blk)</td>
+   <td>GND</td>
+   <td>GND</td>
+   </tr>
+   </tbody>
+   </table>
+
+### Pinout for I2CB+UART
+
+   <table border="1" class="docutils">
+   <tbody>
+   <tr>
+   <th>Pin</th>
+   <th>Signal</th>
+   <th>Volt</th>
+   </tr>
+   <tr>
+   <td>1 (red)</td>
+   <td>VCC</td>
+   <td>+5V</td>
+   </tr>
+   <tr>
+   <td>2 (blk)</td>
+   <td>SERIAL4 TX (OUT)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>3 (blk)</td>
+   <td>SERIAL4 RX (IN)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>4 (blk)</td>
+   <td>SCL</td>
+   <td>+3.3 (pullups)</td>
+   </tr>
+   <tr>
+   <td>5 (blk)</td>
+   <td>SDA</td>
+   <td>+3.3 (pullups)</td>
+   </tr>
+   <tr>
+   <td>6 (blk)</td>
+   <td>GND</td>
+   <td>GND</td>
+   </tr>
+   </tbody>
+   </table>
+
+## CAN
+
+The Pixhawk4 has two independent CAN buses, with the following pinouts.
+
+### CAN1&2
+
+   <table border="1" class="docutils">
+   <tbody>
+   <tr>
+   <th>Pin</th>
+   <th>Signal</th>
+   <th>Volt</th>
+   </tr>
+   <tr>
+   <td>1 (red)</td>
+   <td>VCC</td>
+   <td>+5V</td>
+   </tr>
+   <tr>
+   <td>2 (blk)</td>
+   <td>CAN_H</td>
+   <td>+12V</td>
+   </tr>
+   <tr>
+   <td>3 (blk)</td>
+   <td>CAN_L</td>
+   <td>+12V</td>
+   </tr>
+   <tr>
+   <td>4 (blk)</td>
+   <td>GND</td>
+   <td>GND</td>
+   </tr>
+   </tbody>
+   </table>
+
+## Debug
+
+The Pixhawk4 supports SWD debugging on the debug port
+
+   <table border="1" class="docutils">
+   <tbody>
+   <tr>
+   <th>Pin </th>
+   <th>Signal </th>
+   <th>Volt </th>
+   </tr>
+   <tr>
+   <td>1 (red)</td>
+   <td>FMU VDD 3.3</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>2 (blk)</td>
+   <td>UART TX Debug (OUT)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>3 (blk)</td>
+   <td>UART RX Debug (IN)</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>4 (blk)</td>
+   <td>SWDIO</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>5 (blk)</td>
+   <td>SWCLK</td>
+   <td>+3.3V</td>
+   </tr>
+   <tr>
+   <td>6 (blk)</td>
+   <td>GND</td>
+   <td>GND</td>
+   </tr>
+   </tbody>
+   </table>
+
 
 ## Loading Firmware
 

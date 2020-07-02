@@ -1,34 +1,44 @@
 #include <AP_HAL/AP_HAL.h>
 
-#if HAL_CPU_CLASS >= HAL_CPU_CLASS_150
-
 #include "AP_NavEKF3.h"
 #include "AP_NavEKF3_core.h"
 #include <AP_AHRS/AP_AHRS.h>
 #include <AP_Vehicle/AP_Vehicle.h>
 #include <GCS_MAVLink/GCS.h>
+#include <AP_GPS/AP_GPS.h>
 
 extern const AP_HAL::HAL& hal;
 
 
 /* Monitor GPS data to see if quality is good enough to initialise the EKF
-   Monitor magnetometer innovations to to see if the heading is good enough to use GPS
+   Monitor magnetometer innovations to see if the heading is good enough to use GPS
    Return true if all criteria pass for 10 seconds
 
    We also record the failure reason so that prearm_failure_reason()
    can give a good report to the user on why arming is failing
 */
-bool NavEKF3_core::calcGpsGoodToAlign(void)
+void NavEKF3_core::calcGpsGoodToAlign(void)
 {
     if (inFlight && assume_zero_sideslip() && !use_compass()) {
         // this is a special case where a plane has launched without magnetometer
         // is now in the air and needs to align yaw to the GPS and start navigating as soon as possible
-        return true;
+        gpsGoodToAlign = true;
+        return;
     }
 
     // User defined multiplier to be applied to check thresholds
     float checkScaler = 0.01f*(float)frontend->_gpsCheckScaler;
 
+    if (gpsGoodToAlign) {
+        /*
+          if we have already passed GPS alignment checks then raise
+          the check threshold so that we have some hysterisis and
+          don't continuously change from able to arm to not able to
+          arm
+         */
+        checkScaler *= 1.3f;
+    }
+    
     // If we have good magnetometer consistency and bad innovations for longer than 5 seconds then we reset heading and field states
     // This enables us to handle large changes to the external magnetic field environment that occur before arming
     if ((magTestRatio.x <= 1.0f && magTestRatio.y <= 1.0f && yawTestRatio <= 1.0f) || !consistentMagData) {
@@ -47,15 +57,15 @@ bool NavEKF3_core::calcGpsGoodToAlign(void)
 
     const struct Location &gpsloc = gps.location(); // Current location
     const float posFiltTimeConst = 10.0f; // time constant used to decay position drift
-    // calculate time lapsesd since last update and limit to prevent numerical errors
+    // calculate time lapsed since last update and limit to prevent numerical errors
     float deltaTime = constrain_float(float(imuDataDelayed.time_ms - lastPreAlignGpsCheckTime_ms)*0.001f,0.01f,posFiltTimeConst);
     lastPreAlignGpsCheckTime_ms = imuDataDelayed.time_ms;
     // Sum distance moved
-    gpsDriftNE += location_diff(gpsloc_prev, gpsloc).length();
+    gpsDriftNE += gpsloc_prev.get_distance(gpsloc);
     gpsloc_prev = gpsloc;
     // Decay distance moved exponentially to zero
     gpsDriftNE *= (1.0f - deltaTime/posFiltTimeConst);
-    // Clamp the fiter state to prevent excessive persistence of large transients
+    // Clamp the filter state to prevent excessive persistence of large transients
     gpsDriftNE = MIN(gpsDriftNE,10.0f);
     // Fail if more than 3 metres drift after filtering whilst on-ground
     // This corresponds to a maximum acceptable average drift rate of 0.3 m/s or single glitch event of 3m
@@ -223,16 +233,20 @@ bool NavEKF3_core::calcGpsGoodToAlign(void)
         lastGpsVelFail_ms = imuSampleTime_ms;
     }
 
-    // record time of fail
+    // record time of pass or fail
     if (gpsSpdAccFail || numSatsFail || hdopFail || hAccFail || vAccFail || yawFail || gpsDriftFail || gpsVertVelFail || gpsHorizVelFail) {
         lastGpsVelFail_ms = imuSampleTime_ms;
+    } else {
+        lastGpsVelPass_ms = imuSampleTime_ms;
     }
 
-    // continuous period without fail required to return a healthy status
-    if (imuSampleTime_ms - lastGpsVelFail_ms > 10000) {
-        return true;
+    // continuous period of 10s without fail required to set healthy
+    // continuous period of 5s without pass required to set unhealthy
+    if (!gpsGoodToAlign && imuSampleTime_ms - lastGpsVelFail_ms > 10000) {
+        gpsGoodToAlign = true;
+    } else if (gpsGoodToAlign && imuSampleTime_ms - lastGpsVelPass_ms > 5000) {
+        gpsGoodToAlign = false;
     }
-    return false;
 }
 
 // update inflight calculaton that determines if GPS data is good enough for reliable navigation
@@ -314,7 +328,7 @@ void NavEKF3_core::detectFlight()
         // trigger at 8 m/s airspeed
         if (_ahrs->airspeed_sensor_enabled()) {
             const AP_Airspeed *airspeed = _ahrs->get_airspeed();
-            if (airspeed->get_airspeed() * airspeed->get_EAS2TAS() > 10.0f) {
+            if (airspeed->get_airspeed() * AP::ahrs().get_EAS2TAS() > 10.0f) {
                 highAirSpd = true;
             }
         }
@@ -371,16 +385,13 @@ void NavEKF3_core::detectFlight()
 
             // If more than 5 seconds since likely_flying was set
             // true, then set inFlight true
-            if (_ahrs->get_time_flying_ms() > 5000) {
+            const AP_Vehicle *vehicle = AP::vehicle();
+            if (vehicle->get_time_flying_ms() > 5000) {
                 inFlight = true;
             }
         }
 
     }
-
-    // store current on-ground  and in-air status for next time
-    prevOnGround = onGround;
-    prevInFlight = inFlight;
 
     // Store vehicle height and range prior to takeoff for use in post takeoff checks
     if (onGround) {
@@ -396,6 +407,22 @@ void NavEKF3_core::detectFlight()
             yawInnovAtLastMagReset = innovYaw;
         }
     }
+
+    // handle reset of counters used to control how many times we will try to reset the yaw to the EKF-GSF value per flight
+    if (!prevOnGround && onGround) {
+        // landed so disable filter bank
+        EKFGSF_run_filterbank = false;
+    } else if (!prevInFlight && inFlight) {
+        // started flying so reset counters and enable filter bank
+        EKFGSF_yaw_reset_ms = 0;
+        EKFGSF_yaw_reset_request_ms = 0;
+        EKFGSF_yaw_reset_count = 0;
+        EKFGSF_run_filterbank = true;
+    }
+
+    // store current on-ground  and in-air status for next time
+    prevOnGround = onGround;
+    prevInFlight = inFlight;
 
 }
 
@@ -439,10 +466,10 @@ void NavEKF3_core::setTouchdownExpected(bool val)
 
 // Set to true if the terrain underneath is stable enough to be used as a height reference
 // in combination with a range finder. Set to false if the terrain underneath the vehicle
-// cannot be used as a height reference
+// cannot be used as a height reference. Use to prevent range finder operation otherwise
+// enabled by the combination of EK3_RNG_USE_HGT and EK3_RNG_USE_SPD parameters.
 void NavEKF3_core::setTerrainHgtStable(bool val)
 {
-    terrainHgtStableSet_ms = imuSampleTime_ms;
     terrainHgtStable = val;
 }
 
@@ -455,7 +482,7 @@ void NavEKF3_core::detectOptFlowTakeoff(void)
         Vector3f angRateVec;
         Vector3f gyroBias;
         getGyroBias(gyroBias);
-        bool dual_ins = ins.get_gyro_health(0) && ins.get_gyro_health(1);
+        bool dual_ins = ins.use_gyro(0) && ins.use_gyro(1);
         if (dual_ins) {
             angRateVec = (ins.get_gyro(0) + ins.get_gyro(1)) * 0.5f - gyroBias;
         } else {
@@ -469,4 +496,3 @@ void NavEKF3_core::detectOptFlowTakeoff(void)
     }
 }
 
-#endif // HAL_CPU_CLASS

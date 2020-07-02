@@ -1,5 +1,5 @@
 /*
- *  ToneAlarm PX4 driver
+ *  ToneAlarm driver
  */
 /*
  *   This program is free software: you can redistribute it and/or modify
@@ -33,14 +33,14 @@ public:
     void update() override;
 
     // handle a PLAY_TUNE message
-    void handle_play_tune(mavlink_message_t *msg) override;
+    void handle_play_tune(const mavlink_message_t &msg) override;
+
+    // play_tune - play tone specified by the provided string of notes
+    void play_tune(const char *tune) override;
 
 private:
     /// play_tune - play one of the pre-defined tunes
     void play_tone(const uint8_t tone_index);
-
-    // play_string - play tone specified by the provided string of notes
-    void play_string(const char *str);
 
     // stop_cont_tone - stop playing the currently playing continuous tone
     void stop_cont_tone();
@@ -58,6 +58,7 @@ private:
         uint16_t parachute_release     : 1;    // 1 if parachute is being released
         uint16_t pre_arm_check         : 1;    // 0 = failing checks, 1 = passed
         uint16_t failsafe_radio        : 1;    // 1 if radio failsafe
+        uint16_t failsafe_gcs          : 1;    // 1 if gcs failsafe
         uint16_t vehicle_lost          : 1;    // 1 if lost copter tone requested
         uint16_t compass_cal_running   : 1;    // 1 if compass calibration is running
         uint16_t waiting_for_throw     : 1;    // 1 if waiting for copter throw launch

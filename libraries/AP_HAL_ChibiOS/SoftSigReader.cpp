@@ -11,7 +11,7 @@
  *
  * You should have received a copy of the GNU General Public License along
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Code by Andrew Tridgell and Siddharth Bharat Purohit
  */
 
@@ -36,14 +36,17 @@ bool SoftSigReader::attach_capture_timer(ICUDriver* icu_drv, icuchannel_t chan, 
     }
     _icu_drv = icu_drv;
     //Setup Burst transfer of period and width measurement
-    dma = STM32_DMA_STREAM(dma_stream);
+    osalDbgAssert(dma == nullptr, "double DMA allocation");
     chSysLock();
-    bool dma_allocated = dmaStreamAllocate(dma,
-                                            12,  //IRQ Priority
-                                            (stm32_dmaisr_t)_irq_handler,
-                                            (void *)this);
-    osalDbgAssert(!dma_allocated, "stream already allocated");
+    dma = dmaStreamAllocI(dma_stream,
+                          12,  //IRQ Priority
+                          (stm32_dmaisr_t)_irq_handler,
+                          (void *)this);
+    osalDbgAssert(dma, "stream allocation failed");
     chSysUnlock();
+#if STM32_DMA_SUPPORTS_DMAMUX
+    dmaSetRequestSource(dma, dma_channel);
+#endif
     //setup address for full word transfer from Timer
     dmaStreamSetPeripheral(dma, &icu_drv->tim->DMAR);
 
@@ -88,12 +91,19 @@ bool SoftSigReader::attach_capture_timer(ICUDriver* icu_drv, icuchannel_t chan, 
     return true;
 }
 
+void SoftSigReader::disable(void)
+{
+    icuStopCapture(_icu_drv);
+    dmaStreamDisable(dma);
+}
+
 void SoftSigReader::_irq_handler(void* self, uint32_t flags)
 {
     SoftSigReader* sig_reader = (SoftSigReader*)self;
     // we need to restart the DMA as quickly as possible to prevent losing pulses, so we
     // make a fixed length copy to a 2nd buffer. On the F100 this reduces the time with DMA
     // disabled from 20us to under 1us
+    stm32_cacheBufferInvalidate(sig_reader->signal, SOFTSIG_BOUNCE_BUF_SIZE*4);
     memcpy(sig_reader->signal2, sig_reader->signal, SOFTSIG_BOUNCE_BUF_SIZE*4);
     //restart the DMA transfers
     dmaStreamDisable(sig_reader->dma);

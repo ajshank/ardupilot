@@ -26,14 +26,14 @@
 #include <sys/types.h>
 
 #include <AP_HAL/AP_HAL.h>
-#include <DataFlash/DataFlash.h>
+#include <AP_Logger/AP_Logger.h>
 
 extern const AP_HAL::HAL& hal;
 
 namespace SITL {
 
-XPlane::XPlane(const char *home_str, const char *frame_str) :
-    Aircraft(home_str, frame_str)
+XPlane::XPlane(const char *frame_str) :
+    Aircraft(frame_str)
 {
     use_time_sync = false;
     const char *colon = strchr(frame_str, ':');
@@ -42,6 +42,7 @@ XPlane::XPlane(const char *home_str, const char *frame_str) :
     }
 
     heli_frame = (strstr(frame_str, "-heli") != nullptr);
+    num_motors = 2;
 
     socket_in.bind("0.0.0.0", bind_port);
     printf("Waiting for XPlane data on UDP port %u and sending to port %u\n",
@@ -258,11 +259,11 @@ bool XPlane::receive_data(void)
         }
 
         case EngineRPM:
-            rpm1 = data[1];
+            rpm[0] = data[1];
             break;
 
         case PropRPM:
-            rpm2 = data[1];
+            rpm[1] = data[1];
             break;
             
         case Joystick2:
@@ -306,11 +307,11 @@ bool XPlane::receive_data(void)
     accel_earth.z += GRAVITY_MSS;
     
     // the position may slowly deviate due to float accuracy and longitude scaling
-    if (get_distance(loc, location) > 4 || abs(loc.alt - location.alt)*0.01f > 2.0f) {
+    if (loc.get_distance(location) > 4 || abs(loc.alt - location.alt)*0.01f > 2.0f) {
         printf("X-Plane home reset dist=%f alt=%.1f/%.1f\n",
-               get_distance(loc, location), loc.alt*0.01f, location.alt*0.01f);
+               loc.get_distance(location), loc.alt*0.01f, location.alt*0.01f);
         // reset home location
-        position_zero(-pos.x, -pos.y, -pos.z);
+        position_zero = {-pos.x, -pos.y, -pos.z};
         home.lat = loc.lat;
         home.lng = loc.lng;
         home.alt = loc.alt;

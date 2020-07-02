@@ -52,10 +52,15 @@ void RGBLed::_set_rgb(uint8_t red, uint8_t green, uint8_t blue)
     }
 }
 
+RGBLed::rgb_source_t RGBLed::rgb_source() const
+{
+    return rgb_source_t(pNotify->_rgb_led_override.get());
+}
+
 // set_rgb - set color as a combination of red, green and blue values
 void RGBLed::set_rgb(uint8_t red, uint8_t green, uint8_t blue)
 {
-    if (pNotify->_rgb_led_override) {
+    if (rgb_source() == mavlink) {
         // don't set if in override mode
         return;
     }
@@ -88,6 +93,14 @@ uint8_t RGBLed::get_brightness(void) const
     return brightness;
 }
 
+uint32_t RGBLed::get_colour_sequence_obc(void) const
+{
+    if (AP_Notify::flags.armed) {
+        return DEFINE_COLOUR_SEQUENCE_SOLID(RED);
+    }
+    return DEFINE_COLOUR_SEQUENCE_SOLID(GREEN);
+}
+
 // _scheduled_update - updates _red, _green, _blue according to notify flags
 uint32_t RGBLed::get_colour_sequence(void) const
 {
@@ -105,6 +118,7 @@ uint32_t RGBLed::get_colour_sequence(void) const
     // gps failsafe pattern : flashing yellow and blue
     // ekf_bad pattern : flashing yellow and red
     if (AP_Notify::flags.failsafe_radio ||
+        AP_Notify::flags.failsafe_gcs ||
         AP_Notify::flags.failsafe_battery ||
         AP_Notify::flags.ekf_bad ||
         AP_Notify::flags.gps_glitching ||
@@ -149,12 +163,52 @@ uint32_t RGBLed::get_colour_sequence(void) const
     return sequence_disarmed_bad_gps;
 }
 
-// _scheduled_update - updates _red, _green, _blue according to notify flags
-void RGBLed::update_colours(void)
+uint32_t RGBLed::get_colour_sequence_traffic_light(void) const
 {
-    const uint8_t brightness = get_brightness();
+    if (AP_Notify::flags.initialising) {
+        return DEFINE_COLOUR_SEQUENCE(RED,GREEN,BLUE,RED,GREEN,BLUE,RED,GREEN,BLUE,OFF);
+    }
 
-    const uint32_t current_colour_sequence = get_colour_sequence();
+    if (AP_Notify::flags.armed) {
+        return DEFINE_COLOUR_SEQUENCE_SLOW(RED);
+    }
+
+    if (hal.util->safety_switch_state() != AP_HAL::Util::SAFETY_DISARMED) {
+        if (!AP_Notify::flags.pre_arm_check) {
+            return DEFINE_COLOUR_SEQUENCE_ALTERNATE(YELLOW, OFF);
+        } else {
+            return DEFINE_COLOUR_SEQUENCE_SLOW(YELLOW);
+        }
+    }
+
+    if (!AP_Notify::flags.pre_arm_check) {
+        return DEFINE_COLOUR_SEQUENCE_ALTERNATE(GREEN, OFF);
+    }
+    return DEFINE_COLOUR_SEQUENCE_SLOW(GREEN);
+}
+
+// update - updates led according to timed_updated.  Should be called
+// at 50Hz
+void RGBLed::update()
+{
+    uint32_t current_colour_sequence = 0;
+
+    switch (rgb_source()) {
+    case mavlink:
+        update_override();
+        return; // note this is a return not a break!
+    case standard:
+        current_colour_sequence = get_colour_sequence();
+        break;
+    case obc:
+        current_colour_sequence = get_colour_sequence_obc();
+        break;
+    case traffic_light:
+        current_colour_sequence = get_colour_sequence_traffic_light();
+        break;
+    }
+
+    const uint8_t brightness = get_brightness();
 
     uint8_t step = (AP_HAL::millis()/100) % 10;
 
@@ -169,33 +223,23 @@ void RGBLed::update_colours(void)
     _red_des = (colour & RED) ? brightness : 0;
     _green_des = (colour & GREEN) ? brightness : 0;
     _blue_des = (colour & BLUE) ? brightness : 0;
-}
 
-// update - updates led according to timed_updated.  Should be called
-// at 50Hz
-void RGBLed::update()
-{
-    if (!pNotify->_rgb_led_override) {
-        update_colours();
-        set_rgb(_red_des, _green_des, _blue_des);
-    } else {
-        update_override();
-    }
+    set_rgb(_red_des, _green_des, _blue_des);
 }
 
 /*
   handle LED control, only used when LED_OVERRIDE=1
 */
-void RGBLed::handle_led_control(mavlink_message_t *msg)
+void RGBLed::handle_led_control(const mavlink_message_t &msg)
 {
-    if (!pNotify->_rgb_led_override) {
+    if (rgb_source() != mavlink) {
         // ignore LED_CONTROL commands if not in LED_OVERRIDE mode
         return;
     }
 
     // decode mavlink message
     mavlink_led_control_t packet;
-    mavlink_msg_led_control_decode(msg, &packet);
+    mavlink_msg_led_control_decode(&msg, &packet);
 
     _led_override.start_ms = AP_HAL::millis();
     
@@ -237,4 +281,16 @@ void RGBLed::update_override(void)
     } else {
         _set_rgb(0, 0, 0);
     }
+}
+
+/*
+  RGB control
+  give RGB and flash rate, used with scripting
+*/
+void RGBLed::rgb_control(uint8_t r, uint8_t g, uint8_t b, uint8_t rate_hz)
+{
+    _led_override.rate_hz = rate_hz;
+    _led_override.r = r;
+    _led_override.g = g;
+    _led_override.b = b;
 }

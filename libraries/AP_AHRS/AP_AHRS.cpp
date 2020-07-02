@@ -17,7 +17,10 @@
 #include "AP_AHRS.h"
 #include "AP_AHRS_View.h"
 #include <AP_HAL/AP_HAL.h>
-#include <DataFlash/DataFlash.h>
+#include <AP_Logger/AP_Logger.h>
+#include <AP_GPS/AP_GPS.h>
+#include <AP_Baro/AP_Baro.h>
+#include <AP_NMEA_Output/AP_NMEA_Output.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -159,6 +162,16 @@ const AP_Param::GroupInfo AP_AHRS::var_info[] = {
     AP_GROUPEND
 };
 
+// init sets up INS board orientation
+void AP_AHRS::init()
+{
+    update_orientation();
+
+#if !HAL_MINIMIZE_FEATURES && AP_AHRS_NAVEKF_AVAILABLE
+    _nmea_out = AP_NMEA_Output::probe();
+#endif
+}
+
 // return a smoothed and corrected gyro vector using the latest ins data (which may not have been consumed by the EKF yet)
 Vector3f AP_AHRS::get_gyro_latest(void) const
 {
@@ -167,19 +180,19 @@ Vector3f AP_AHRS::get_gyro_latest(void) const
 }
 
 // return airspeed estimate if available
-bool AP_AHRS::airspeed_estimate(float *airspeed_ret) const
+bool AP_AHRS::airspeed_estimate(float &airspeed_ret) const
 {
     if (airspeed_sensor_enabled()) {
-        *airspeed_ret = _airspeed->get_airspeed();
+        airspeed_ret = _airspeed->get_airspeed();
         if (_wind_max > 0 && AP::gps().status() >= AP_GPS::GPS_OK_FIX_2D) {
             // constrain the airspeed by the ground speed
             // and AHRS_WIND_MAX
             const float gnd_speed = AP::gps().ground_speed();
-            float true_airspeed = *airspeed_ret * get_EAS2TAS();
+            float true_airspeed = airspeed_ret * get_EAS2TAS();
             true_airspeed = constrain_float(true_airspeed,
                                             gnd_speed - _wind_max,
                                             gnd_speed + _wind_max);
-            *airspeed_ret = true_airspeed / get_EAS2TAS();
+            airspeed_ret = true_airspeed / get_EAS2TAS();
         }
         return true;
     }
@@ -187,7 +200,7 @@ bool AP_AHRS::airspeed_estimate(float *airspeed_ret) const
 }
 
 // set_trim
-void AP_AHRS::set_trim(Vector3f new_trim)
+void AP_AHRS::set_trim(const Vector3f &new_trim)
 {
     Vector3f trim;
     trim.x = constrain_float(new_trim.x, ToRad(-AP_AHRS_TRIM_LIMIT), ToRad(AP_AHRS_TRIM_LIMIT));
@@ -214,16 +227,16 @@ void AP_AHRS::add_trim(float roll_in_radians, float pitch_in_radians, bool save_
 }
 
 // Set the board mounting orientation, may be called while disarmed
-void AP_AHRS::set_orientation()
+void AP_AHRS::update_orientation()
 {
-    enum Rotation orientation = (enum Rotation)_board_orientation.get();
+    const enum Rotation orientation = (enum Rotation)_board_orientation.get();
     if (orientation != ROTATION_CUSTOM) {
         AP::ins().set_board_orientation(orientation);
         if (_compass != nullptr) {
             _compass->set_board_orientation(orientation);
         }
     } else {
-        _custom_rotation.from_euler(_custom_roll, _custom_pitch, _custom_yaw);
+        _custom_rotation.from_euler(radians(_custom_roll), radians(_custom_pitch), radians(_custom_yaw));
         AP::ins().set_board_orientation(orientation, &_custom_rotation);
         if (_compass != nullptr) {
             _compass->set_board_orientation(orientation, &_custom_rotation);
@@ -238,13 +251,13 @@ Vector2f AP_AHRS::groundspeed_vector(void)
     Vector2f gndVelADS;
     Vector2f gndVelGPS;
     float airspeed = 0;
-    const bool gotAirspeed = airspeed_estimate_true(&airspeed);
+    const bool gotAirspeed = airspeed_estimate_true(airspeed);
     const bool gotGPS = (AP::gps().status() >= AP_GPS::GPS_OK_FIX_2D);
     if (gotAirspeed) {
         const Vector3f wind = wind_estimate();
         const Vector2f wind2d(wind.x, wind.y);
         const Vector2f airspeed_vector(_cos_yaw * airspeed, _sin_yaw * airspeed);
-        gndVelADS = airspeed_vector - wind2d;
+        gndVelADS = airspeed_vector + wind2d;
     }
 
     // Generate estimate of ground speed vector using GPS
@@ -289,7 +302,7 @@ Vector2f AP_AHRS::groundspeed_vector(void)
         Vector2f ret(cosf(yaw), sinf(yaw));
         ret *= airspeed;
         // adjust for estimated wind
-        Vector3f wind = wind_estimate();
+        const Vector3f wind = wind_estimate();
         ret.x += wind.x;
         ret.y += wind.y;
         return ret;
@@ -459,40 +472,57 @@ float AP_AHRS::getSSA(void)
 }
 
 // rotate a 2D vector from earth frame to body frame
-Vector2f AP_AHRS::rotate_earth_to_body2D(const Vector2f &ef) const
+Vector2f AP_AHRS::earth_to_body2D(const Vector2f &ef) const
 {
     return Vector2f(ef.x * _cos_yaw + ef.y * _sin_yaw,
                     -ef.x * _sin_yaw + ef.y * _cos_yaw);
 }
 
 // rotate a 2D vector from earth frame to body frame
-Vector2f AP_AHRS::rotate_body_to_earth2D(const Vector2f &bf) const
+Vector2f AP_AHRS::body_to_earth2D(const Vector2f &bf) const
 {
     return Vector2f(bf.x * _cos_yaw - bf.y * _sin_yaw,
                     bf.x * _sin_yaw + bf.y * _cos_yaw);
 }
 
-// log ahrs home and EKF origin to dataflash
+// log ahrs home and EKF origin
 void AP_AHRS::Log_Write_Home_And_Origin()
 {
-    DataFlash_Class *df = DataFlash_Class::instance();
-    if (df == nullptr) {
+    AP_Logger *logger = AP_Logger::get_singleton();
+    if (logger == nullptr) {
         return;
     }
 #if AP_AHRS_NAVEKF_AVAILABLE
-    // log ekf origin if set
     Location ekf_orig;
     if (get_origin(ekf_orig)) {
-        df->Log_Write_Origin(LogOriginType::ekf_origin, ekf_orig);
+        logger->Write_Origin(LogOriginType::ekf_origin, ekf_orig);
     }
 #endif
 
-    // log ahrs home if set
     if (home_is_set()) {
-        df->Log_Write_Origin(LogOriginType::ahrs_home, _home);
+        logger->Write_Origin(LogOriginType::ahrs_home, _home);
     }
 }
 
+// get apparent to true airspeed ratio
+float AP_AHRS::get_EAS2TAS(void) const {
+    return AP::baro().get_EAS2TAS();
+}
+
+void AP_AHRS::update_nmea_out()
+{
+#if !HAL_MINIMIZE_FEATURES && AP_AHRS_NAVEKF_AVAILABLE
+    if (_nmea_out != nullptr) {
+        _nmea_out->update();
+    }
+#endif
+}
+
+// return current vibration vector for primary IMU
+Vector3f AP_AHRS::get_vibration(void) const
+{
+    return AP::ins().get_vibration_levels();
+}
 
 // singleton instance
 AP_AHRS *AP_AHRS::_singleton;

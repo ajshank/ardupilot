@@ -1,18 +1,18 @@
 #include <AP_HAL/AP_HAL.h>
 
-#if HAL_CPU_CLASS >= HAL_CPU_CLASS_150
-
 // uncomment this to force the optimisation of this code, note that
 // this makes debugging harder
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL || CONFIG_HAL_BOARD == HAL_BOARD_LINUX
 #pragma GCC optimize("O0")
 #else
-#pragma GCC optimize("O3")
+#pragma GCC optimize("O2")
 #endif
 
 #include "SoloGimbalEKF.h"
 #include <AP_Param/AP_Param.h>
 #include <AP_Vehicle/AP_Vehicle.h>
+#include <AP_NavEKF/AP_Nav_Common.h>
+#include <AP_AHRS/AP_AHRS.h>
 
 #include <stdio.h>
 
@@ -962,4 +962,3 @@ bool SoloGimbalEKF::getStatus() const
     return  YawAligned && (run_time > 15000);
 }
 
-#endif // HAL_CPU_CLASS

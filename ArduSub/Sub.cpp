@@ -24,14 +24,13 @@ const AP_HAL::HAL& hal = AP_HAL::get_HAL();
   constructor for main Sub class
  */
 Sub::Sub()
-    : DataFlash(g.log_bitmask),
+    : logger(g.log_bitmask),
           control_mode(MANUAL),
           motors(MAIN_LOOP_RATE),
           scaleLongDown(1),
           auto_mode(Auto_WP),
           guided_mode(Guided_WP),
           auto_yaw_mode(AUTO_YAW_LOOK_AT_NEXT_WP),
-          G_Dt(MAIN_LOOP_SECONDS),
           inertial_nav(ahrs),
           ahrs_view(ahrs, ROTATION_NONE),
           attitude_control(ahrs_view, aparm, motors, MAIN_LOOP_SECONDS),
@@ -41,8 +40,6 @@ Sub::Sub()
           circle_nav(inertial_nav, ahrs_view, pos_control),
           param_loader(var_info)
 {
-    memset(&current_loc, 0, sizeof(current_loc));
-
     // init sensor error logging flags
     sensor_health.baro = true;
     sensor_health.compass = true;
@@ -53,3 +50,4 @@ Sub::Sub()
 }
 
 Sub sub;
+AP_Vehicle& vehicle = sub;

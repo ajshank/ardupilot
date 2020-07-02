@@ -41,21 +41,9 @@ void AP_Airspeed_UAVCAN::subscribe_msgs(AP_UAVCAN* ap_uavcan)
     }
 }
 
-bool AP_Airspeed_UAVCAN::take_registry()
-{
-    return _sem_registry.take(HAL_SEMAPHORE_BLOCK_FOREVER);
-}
-
-void AP_Airspeed_UAVCAN::give_registry()
-{
-    _sem_registry.give();
-}
-
 AP_Airspeed_Backend* AP_Airspeed_UAVCAN::probe(AP_Airspeed &_frontend, uint8_t _instance)
 {
-    if (!take_registry()) {
-        return nullptr;
-    }
+    WITH_SEMAPHORE(_sem_registry);
 
     AP_Airspeed_UAVCAN* backend = nullptr;
 
@@ -79,8 +67,6 @@ AP_Airspeed_Backend* AP_Airspeed_UAVCAN::probe(AP_Airspeed &_frontend, uint8_t _
             break;
         }
     }
-
-    give_registry();
 
     return backend;
 }
@@ -123,17 +109,18 @@ AP_Airspeed_UAVCAN* AP_Airspeed_UAVCAN::get_uavcan_backend(AP_UAVCAN* ap_uavcan,
 
 void AP_Airspeed_UAVCAN::handle_airspeed(AP_UAVCAN* ap_uavcan, uint8_t node_id, const AirspeedCb &cb)
 {
-    if (take_registry()) {
-        AP_Airspeed_UAVCAN* driver = get_uavcan_backend(ap_uavcan, node_id);
+    WITH_SEMAPHORE(_sem_registry);
 
-        if (driver != nullptr) {
-            WITH_SEMAPHORE(driver->_sem_airspeed);
-            driver->_pressure = cb.msg->differential_pressure;
+    AP_Airspeed_UAVCAN* driver = get_uavcan_backend(ap_uavcan, node_id);
+
+    if (driver != nullptr) {
+        WITH_SEMAPHORE(driver->_sem_airspeed);
+        driver->_pressure = cb.msg->differential_pressure;
+        if (!isnan(cb.msg->static_air_temperature)) {
             driver->_temperature = cb.msg->static_air_temperature - C_TO_KELVIN;
-            driver->_last_sample_time_ms = AP_HAL::millis();
+            driver->_have_temperature = true;
         }
-
-        give_registry();
+        driver->_last_sample_time_ms = AP_HAL::millis();
     }
 }
 
@@ -158,6 +145,9 @@ bool AP_Airspeed_UAVCAN::get_differential_pressure(float &pressure)
 
 bool AP_Airspeed_UAVCAN::get_temperature(float &temperature)
 {
+    if (!_have_temperature) {
+        return false;
+    }
     WITH_SEMAPHORE(_sem_airspeed);
 
     if ((AP_HAL::millis() - _last_sample_time_ms) > 100) {

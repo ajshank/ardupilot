@@ -1,22 +1,10 @@
 #pragma once
 
+#include <AP_HAL/AP_HAL_Boards.h>
+
 /*
   macros to allow code to build on multiple platforms more easily
  */
-
-#ifdef __GNUC__
- #define WARN_IF_UNUSED __attribute__ ((warn_unused_result))
-#else
- #define WARN_IF_UNUSED
-#endif
-
-// use this to avoid issues between C++11 with NuttX and C++10 on
-// other platforms.
-#if !(defined(__GXX_EXPERIMENTAL_CXX0X__) || __cplusplus >= 201103L)
-# define constexpr const
-#endif
-
-#define NORETURN __attribute__ ((noreturn))
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL || CONFIG_HAL_BOARD == HAL_BOARD_LINUX
 /*
@@ -24,6 +12,9 @@
  */
 #define ALLOW_DOUBLE_MATH_FUNCTIONS
 #endif
+
+// we need to include math.h here for newer compilers (eg. g++ 7.3.1 for stm32)
+#include <math.h>
 
 #if !defined(ALLOW_DOUBLE_MATH_FUNCTIONS)
 /* give warnings if we use double precision maths functions without

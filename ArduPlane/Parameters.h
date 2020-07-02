@@ -88,7 +88,7 @@ public:
         k_param_scheduler,
         k_param_relay,
         k_param_takeoff_throttle_delay,
-        k_param_skip_gyro_cal, // unused
+        k_param_mode_takeoff, // was skip_gyro_cal
         k_param_auto_fbw_steer,
         k_param_waypoint_max_radius,
         k_param_ground_steer_alt,        
@@ -99,7 +99,7 @@ public:
         k_param_log_bitmask,
         k_param_BoardConfig,
         k_param_rssi_range,     // unused, replaced by rssi_ library parameters
-        k_param_flapin_channel,
+        k_param_flapin_channel_old,  // unused, moved to RC_OPTION
         k_param_flaperon_output, // unused
         k_param_gps,
         k_param_autotune_level,
@@ -186,7 +186,7 @@ public:
         k_param_imu = 130,  // unused
         k_param_altitude_mix, // deprecated
 
-        k_param_compass_enabled,
+        k_param_compass_enabled_deprecated,
         k_param_compass,
         k_param_battery_monitoring, // unused
         k_param_volt_div_ratio,     // unused
@@ -342,9 +342,11 @@ public:
         k_param_mixing_offset,
         k_param_dspoiler_rud_rate,
 
-        k_param_DataFlash = 253, // Logging Group
+        k_param_logger = 253, // Logging Group
 
         // 254,255: reserved
+
+        k_param_vehicle = 257, // vehicle common block of parameters
     };
 
     AP_Int16 format_version;
@@ -461,7 +463,6 @@ public:
     AP_Int8  hil_mode;
 #endif
 
-    AP_Int8 compass_enabled;
     AP_Int8 flap_1_percent;
     AP_Int8 flap_1_speed;
     AP_Int8 flap_2_percent;
@@ -477,7 +478,6 @@ public:
     AP_Int8 takeoff_throttle_slewrate;
     AP_Float takeoff_pitch_limit_reduction_sec;
     AP_Int8 level_roll_limit;
-    AP_Int8 flapin_channel;
 #if AP_TERRAIN_AVAILABLE
     AP_Int8 terrain_follow;
     AP_Int16 terrain_lookahead;
@@ -487,7 +487,7 @@ public:
     AP_Int8 fbwa_tdrag_chan;
     AP_Int8 rangefinder_landing;
     AP_Int8 flap_slewrate;
-#if HAVE_PX4_MIXER || HAL_WITH_IO_MCU
+#if HAL_WITH_IO_MCU
     AP_Int8 override_channel;
     AP_Int8 override_safety;
 #endif
@@ -506,7 +506,7 @@ public:
     static const struct AP_Param::GroupInfo var_info[];
 
     // button reporting library
-    AP_Button button;
+    AP_Button *button_ptr;
 
 #if STATS_ENABLED == ENABLED
     // vehicle statistics
@@ -533,6 +533,9 @@ public:
     // dual motor tailsitter rudder to differential thrust scaling: 0-100%
     AP_Int8 rudd_dt_gain;
 
+    // QACRO mode max yaw rate in deg/sec
+    AP_Int16 acro_yaw_rate;
+
     // mask of channels to do manual pass-thru for
     AP_Int32 manual_rc_mask;
 
@@ -551,14 +554,38 @@ public:
 #endif // ENABLE_SCRIPTING
 
     AP_Int8 takeoff_throttle_accel_count;
+    AP_Int8 takeoff_timeout;
 
 #if LANDING_GEAR_ENABLED == ENABLED
     AP_LandingGear landing_gear;
 #endif
 
     // crow flaps weighting
-    AP_Int8 crow_flap_weight1;
-    AP_Int8 crow_flap_weight2;
+    AP_Int8 crow_flap_weight_outer;
+    AP_Int8 crow_flap_weight_inner;
+    AP_Int8 crow_flap_options;
+    AP_Int8 crow_flap_aileron_matching;
+
+    // Forward throttle battery voltage compenstaion
+    AP_Float fwd_thr_batt_voltage_max;
+    AP_Float fwd_thr_batt_voltage_min;
+    AP_Int8  fwd_thr_batt_idx;
+
+#if EFI_ENABLED
+    // EFI Engine Monitor
+    AP_EFI efi;
+#endif
+
+#if OFFBOARD_GUIDED == ENABLED
+    // guided yaw heading PID
+    AC_PID guidedHeading{5000.0,  0.0,   0.0, 0 ,  10.0,   5.0,  5.0 ,  5.0  , 0.2};
+#endif
+
+
+    AP_Float        fs_ekf_thresh;
+
+    // min initial climb in RTL
+    AP_Int16        rtl_climb_min;
 };
 
 extern const AP_Param::Info var_info[];

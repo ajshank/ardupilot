@@ -27,24 +27,26 @@
 extern const AP_HAL::HAL& hal;
 
 // singleton instance
-AP_Motors *AP_Motors::_instance;
+AP_Motors *AP_Motors::_singleton;
 
 // Constructor
 AP_Motors::AP_Motors(uint16_t loop_rate, uint16_t speed_hz) :
     _loop_rate(loop_rate),
     _speed_hz(speed_hz),
     _throttle_filter(),
-    _spool_desired(DESIRED_SHUT_DOWN),
+    _spool_desired(DesiredSpoolState::SHUT_DOWN),
+    _spool_state(SpoolState::SHUT_DOWN),
     _air_density_ratio(1.0f)
 {
-    _instance = this;
+    _singleton = this;
 
     // setup throttle filtering
     _throttle_filter.set_cutoff_frequency(0.0f);
     _throttle_filter.reset(0.0f);
 
     // init limit flags
-    limit.roll_pitch = true;
+    limit.roll = true;
+    limit.pitch = true;
     limit.yaw = true;
     limit.throttle_lower = true;
     limit.throttle_upper = true;
@@ -60,6 +62,13 @@ void AP_Motors::armed(bool arm)
         if (!arm) {
             save_params_on_disarm();
         }
+    }
+};
+
+void AP_Motors::set_desired_spool_state(DesiredSpoolState spool)
+{
+    if (_flags.armed || (spool == DesiredSpoolState::SHUT_DOWN)) {
+        _spool_desired = spool;
     }
 };
 
@@ -142,8 +151,8 @@ void AP_Motors::rc_set_freq(uint32_t mask, uint16_t freq_hz)
 uint32_t AP_Motors::rc_map_mask(uint32_t mask) const
 {
     uint32_t mask2 = 0;
-    for (uint8_t i=0; i<32; i++) {
-        uint32_t bit = 1UL<<i;
+    for (uint8_t i = 0; i < 32; i++) {
+        uint32_t bit = 1UL << i;
         if (mask & bit) {
             SRV_Channel::Aux_servo_function_t function = SRV_Channels::get_motor_function(i);
             mask2 |= SRV_Channels::get_output_channel_mask(function);
@@ -158,12 +167,19 @@ uint32_t AP_Motors::rc_map_mask(uint32_t mask) const
 void AP_Motors::add_motor_num(int8_t motor_num)
 {
     // ensure valid motor number is provided
-    if( motor_num >= 0 && motor_num < AP_MOTORS_MAX_NUM_MOTORS ) {
+    if (motor_num >= 0 && motor_num < AP_MOTORS_MAX_NUM_MOTORS) {
         uint8_t chan;
         SRV_Channel::Aux_servo_function_t function = SRV_Channels::get_motor_function(motor_num);
         SRV_Channels::set_aux_channel_default(function, motor_num);
         if (!SRV_Channels::find_channel(function, chan)) {
             gcs().send_text(MAV_SEVERITY_ERROR, "Motors: unable to setup motor %u", motor_num);
         }
+    }
+}
+
+namespace AP {
+    AP_Motors *motors()
+    {
+        return AP_Motors::get_singleton();
     }
 }

@@ -4,11 +4,17 @@
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Param/AP_Param.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
-#include <AP_Baro/AP_Baro.h>
+#include <AP_Math/AP_Math.h>
 
 class AP_Airspeed_Backend;
 
+#ifndef AIRSPEED_MAX_SENSORS
 #define AIRSPEED_MAX_SENSORS 2
+#endif
+
+#ifndef AP_AIRSPEED_AUTOCAL_ENABLE
+#define AP_AIRSPEED_AUTOCAL_ENABLE !defined(HAL_BUILD_AP_PERIPH)
+#endif
 
 class Airspeed_Calibration {
 public:
@@ -101,39 +107,16 @@ public:
     }
     float get_differential_pressure(void) const { return get_differential_pressure(primary); }
 
-    // return the current calibration offset
-    float get_offset(uint8_t i) const {
-        return param[i].offset;
-    }
-    float get_offset(void) const { return get_offset(primary); }
-
-    // return the current corrected pressure
-    float get_corrected_pressure(uint8_t i) const {
-        return state[i].corrected_pressure;
-    }
-    float get_corrected_pressure(void) const { return get_corrected_pressure(primary); }
-
-    // set the apparent to true airspeed ratio
-    void set_EAS2TAS(uint8_t i, float v) {
-        state[i].EAS2TAS = v;
-    }
-    void set_EAS2TAS(float v) { set_EAS2TAS(primary, v); }
-
-    // get the apparent to true airspeed ratio
-    float get_EAS2TAS(uint8_t i) const {
-        return state[i].EAS2TAS;
-    }
-    float get_EAS2TAS(void) const { return get_EAS2TAS(primary); }
-
     // update airspeed ratio calibration
     void update_calibration(const Vector3f &vground, int16_t max_airspeed_allowed_during_cal);
 
-	// log data to MAVLink
-	void log_mavlink_send(mavlink_channel_t chan, const Vector3f &vground);
-
     // return health status of sensor
     bool healthy(uint8_t i) const {
-        return state[i].healthy && (fabsf(param[i].offset) > 0 || state[i].use_zero_offset) && enabled(i);
+        bool ok = state[i].healthy && enabled(i);
+#ifndef HAL_BUILD_AP_PERIPH
+        ok &= (fabsf(param[i].offset) > 0 || state[i].use_zero_offset);
+#endif
+        return ok;
     }
     bool healthy(void) const { return healthy(primary); }
 
@@ -154,6 +137,11 @@ public:
                             PITOT_TUBE_ORDER_NEGATIVE = 1,
                             PITOT_TUBE_ORDER_AUTO     = 2 };
 
+    enum OptionsMask {
+        ON_FAILURE_AHRS_WIND_MAX_DO_DISABLE                   = (1<<0),   // If set then use airspeed failure check
+        ON_FAILURE_AHRS_WIND_MAX_RECOVERY_DO_REENABLE         = (1<<1),   // If set then automatically enable the airspeed sensor use when healthy again.
+    };
+
     enum airspeed_type {
         TYPE_NONE=0,
         TYPE_I2C_MS4525=1,
@@ -162,19 +150,29 @@ public:
         TYPE_I2C_MS5525_ADDRESS_1=4,
         TYPE_I2C_MS5525_ADDRESS_2=5,
         TYPE_I2C_SDP3X=6,
-        TYPE_I2C_DLVR=7,
+        TYPE_I2C_DLVR_5IN=7,
         TYPE_UAVCAN=8,
+        TYPE_I2C_DLVR_10IN=9,
     };
 
     // get current primary sensor
     uint8_t get_primary(void) const { return primary; }
 
     static AP_Airspeed *get_singleton() { return _singleton; }
+
+    // return the current corrected pressure, public for AP_Periph
+    float get_corrected_pressure(uint8_t i) const {
+        return state[i].corrected_pressure;
+    }
+    float get_corrected_pressure(void) const {
+        return get_corrected_pressure(primary);
+    }
     
 private:
     static AP_Airspeed *_singleton;
 
     AP_Int8 primary_sensor;
+    AP_Int32 _options;    // bitmask options for airspeed
     
     struct {
         AP_Float offset;
@@ -195,24 +193,32 @@ private:
         float	last_pressure;
         float   filtered_pressure;
         float	corrected_pressure;
-        float   EAS2TAS;
-        bool	healthy:1;
-        bool	hil_set:1;
         float   hil_pressure;
         uint32_t last_update_ms;
         bool use_zero_offset;
-        
+        bool	healthy;
+        bool	hil_set;
+
         // state of runtime calibration
         struct {
             uint32_t start_ms;
-            uint16_t count;
             float    sum;
+            uint16_t count;
             uint16_t read_count;
         } cal;
 
+#if AP_AIRSPEED_AUTOCAL_ENABLE
         Airspeed_Calibration calibration;
         float last_saved_ratio;
         uint8_t counter;
+#endif // AP_AIRSPEED_AUTOCAL_ENABLE
+
+        struct {
+            uint32_t last_check_ms;
+            float health_probability;
+            int8_t param_use_backup;
+            bool has_warned;
+        } failures;
     } state[AIRSPEED_MAX_SENSORS];
 
     // current primary sensor
@@ -222,8 +228,32 @@ private:
     // return the differential pressure in Pascal for the last airspeed reading for the requested instance
     // returns 0 if the sensor is not enabled
     float get_pressure(uint8_t i);
+
+    // get the failure health probability
+    float get_health_failure_probability(uint8_t i) const {
+        return state[i].failures.health_probability;
+    }
+    float get_health_failure_probability(void) const {
+        return get_health_failure_probability(primary);
+    }
+
     void update_calibration(uint8_t i, float raw_pressure);
     void update_calibration(uint8_t i, const Vector3f &vground, int16_t max_airspeed_allowed_during_cal);
+    void send_airspeed_calibration(const Vector3f &vg);
+    // return the current calibration offset
+    float get_offset(uint8_t i) const {
+        return param[i].offset;
+    }
+    float get_offset(void) const { return get_offset(primary); }
+
+    void check_sensor_failures();
+    void check_sensor_ahrs_wind_max_failures(uint8_t i);
 
     AP_Airspeed_Backend *sensor[AIRSPEED_MAX_SENSORS];
+
+    void Log_Airspeed();
+};
+
+namespace AP {
+    AP_Airspeed *airspeed();
 };

@@ -5,12 +5,12 @@
 
 # Compiler options here.
 ifeq ($(USE_OPT),)
-  USE_OPT = -Os -g -fomit-frame-pointer -falign-functions=16
+  USE_OPT = -g -fomit-frame-pointer -falign-functions=16
 endif
 
 # C specific options here (added to USE_OPT).
 ifeq ($(USE_COPT),)
-  USE_COPT =
+  USE_COPT = -Os
 endif
 
 # C++ specific options here (added to USE_OPT).
@@ -117,16 +117,14 @@ CSRC = $(sort $(ALLCSRC))
 CSRC += $(HWDEF)/common/stubs.c \
 	   $(HWDEF)/common/board.c \
 	   $(HWDEF)/common/usbcfg.c \
+	   $(HWDEF)/common/usbcfg_dualcdc.c \
+	   $(HWDEF)/common/usbcfg_common.c \
 	   $(HWDEF)/common/flash.c \
 	   $(HWDEF)/common/malloc.c \
 	   $(HWDEF)/common/hrt.c \
-	   $(HWDEF)/common/stm32_util.c \
-	   $(HWDEF)/common/bouncebuffer.c
-
-ifeq ($(USE_FATFS),yes)
-CSRC += $(HWDEF)/common/posix.c
-endif
-
+       $(HWDEF)/common/stm32_util.c \
+       $(HWDEF)/common/bouncebuffer.c \
+       $(HWDEF)/common/watchdog.c
 
 #	   $(TESTSRC) \
 #	   test.c

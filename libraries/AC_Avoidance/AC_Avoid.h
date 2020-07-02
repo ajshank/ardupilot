@@ -3,11 +3,7 @@
 #include <AP_Common/AP_Common.h>
 #include <AP_Param/AP_Param.h>
 #include <AP_Math/AP_Math.h>
-#include <AP_AHRS/AP_AHRS.h>     // AHRS library
 #include <AC_AttitudeControl/AC_AttitudeControl.h> // Attitude controller library for sqrt controller
-#include <AC_Fence/AC_Fence.h>         // Failsafe fence library
-#include <AP_Proximity/AP_Proximity.h>
-#include <AP_Beacon/AP_Beacon.h>
 
 #define AC_AVOID_ACCEL_CMSS_MAX         100.0f  // maximum acceleration/deceleration in cm/s/s used to avoid hitting fence
 
@@ -22,13 +18,15 @@
 #define AC_AVOID_NONGPS_DIST_MAX_DEFAULT    5.0f    // objects over 5m away are ignored (default value for DIST_MAX parameter)
 #define AC_AVOID_ANGLE_MAX_PERCENT          0.75f   // object avoidance max lean angle as a percentage (expressed in 0 ~ 1 range) of total vehicle max lean angle
 
+#define AC_AVOID_ACTIVE_LIMIT_TIMEOUT_MS    500     // if limiting is active if last limit is happend in the last x ms
+
 /*
  * This class prevents the vehicle from leaving a polygon fence in
  * 2 dimensions by limiting velocity (adjust_velocity).
  */
 class AC_Avoid {
 public:
-    AC_Avoid(const AP_AHRS& ahrs, const AC_Fence& fence, const AP_Proximity& proximity, const AP_Beacon* beacon = nullptr);
+    AC_Avoid();
 
     /* Do not allow copies */
     AC_Avoid(const AC_Avoid &other) = delete;
@@ -38,6 +36,9 @@ public:
     static AC_Avoid *get_singleton() {
         return _singleton;
     }
+
+    // return true if any avoidance feature is enabled
+    bool enabled() const { return _enabled != AC_AVOID_DISABLED; }
 
     /*
      * Adjusts the desired velocity so that the vehicle can stop
@@ -73,12 +74,18 @@ public:
     // limit_direction to be at most the maximum speed permitted by the limit_distance_cm.
     // uses velocity adjustment idea from Randy's second email on this thread:
     //   https://groups.google.com/forum/#!searchin/drones-discuss/obstacle/drones-discuss/QwUXz__WuqY/qo3G8iTLSJAJ
-    void limit_velocity(float kP, float accel_cmss, Vector2f &desired_vel_cms, const Vector2f& limit_direction, float limit_distance_cm, float dt) const;
+    void limit_velocity(float kP, float accel_cmss, Vector2f &desired_vel_cms, const Vector2f& limit_direction, float limit_distance_cm, float dt);
 
      // compute the speed such that the stopping distance of the vehicle will
      // be exactly the input distance.
      // kP should be non-zero for Copter which has a non-linear response
     float get_max_speed(float kP, float accel_cmss, float distance_cm, float dt) const;
+
+    // return margin (in meters) that the vehicle should stay from objects
+    float get_margin() const { return _margin; }
+
+    // return true if limiting is active
+    bool limits_active() const {return (AP_HAL::millis() - _last_limit_time) < AC_AVOID_ACTIVE_LIMIT_TIMEOUT_MS;};
 
     static const struct AP_Param::GroupInfo var_info[];
 
@@ -95,9 +102,15 @@ private:
     void adjust_velocity_circle_fence(float kP, float accel_cmss, Vector2f &desired_vel_cms, float dt);
 
     /*
-     * Adjusts the desired velocity for the polygon fence.
+     * Adjusts the desired velocity for inclusion and exclusion polygon fences
      */
-    void adjust_velocity_polygon_fence(float kP, float accel_cmss, Vector2f &desired_vel_cms, float dt);
+    void adjust_velocity_inclusion_and_exclusion_polygons(float kP, float accel_cmss, Vector2f &desired_vel_cms, float dt);
+
+    /*
+     * Adjusts the desired velocity for the inclusion and exclusion circles
+     */
+    void adjust_velocity_inclusion_circles(float kP, float accel_cmss, Vector2f &desired_vel_cms, float dt);
+    void adjust_velocity_exclusion_circles(float kP, float accel_cmss, Vector2f &desired_vel_cms, float dt);
 
     /*
      * Adjusts the desired velocity for the beacon fence.
@@ -113,8 +126,9 @@ private:
      * Adjusts the desired velocity given an array of boundary points
      *   earth_frame should be true if boundary is in earth-frame, false for body-frame
      *   margin is the distance (in meters) that the vehicle should stop short of the polygon
+     *   stay_inside should be true for fences, false for exclusion polygons
      */
-    void adjust_velocity_polygon(float kP, float accel_cmss, Vector2f &desired_vel_cms, const Vector2f* boundary, uint16_t num_points, bool earth_frame, float margin, float dt);
+    void adjust_velocity_polygon(float kP, float accel_cmss, Vector2f &desired_vel_cms, const Vector2f* boundary, uint16_t num_points, bool earth_frame, float margin, float dt, bool stay_inside);
 
     /*
      * Computes distance required to stop, given current speed.
@@ -131,12 +145,6 @@ private:
     // returns the maximum positive and negative roll and pitch percentages (in -1 ~ +1 range) based on the proximity sensor
     void get_proximity_roll_pitch_pct(float &roll_positive, float &roll_negative, float &pitch_positive, float &pitch_negative);
 
-    // external references
-    const AP_AHRS& _ahrs;
-    const AC_Fence& _fence;
-    const AP_Proximity& _proximity;
-    const AP_Beacon* _beacon;
-
     // parameters
     AP_Int8 _enabled;
     AP_Int16 _angle_max;        // maximum lean angle to avoid obstacles (only used in non-GPS flight modes)
@@ -145,6 +153,7 @@ private:
     AP_Int8 _behavior;          // avoidance behaviour (slide or stop)
 
     bool _proximity_enabled = true; // true if proximity sensor based avoidance is enabled (used to allow pilot to enable/disable)
+    uint32_t _last_limit_time;      // the last time a limit was active
 
     static AC_Avoid *_singleton;
 };

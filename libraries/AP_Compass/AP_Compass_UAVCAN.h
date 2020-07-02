@@ -15,23 +15,20 @@ public:
     void        read(void) override;
 
     static void subscribe_msgs(AP_UAVCAN* ap_uavcan);
-    static AP_Compass_Backend* probe();
+    static AP_Compass_Backend* probe(uint8_t index);
 
     static void handle_magnetic_field(AP_UAVCAN* ap_uavcan, uint8_t node_id, const MagCb &cb);
     static void handle_magnetic_field_2(AP_UAVCAN* ap_uavcan, uint8_t node_id, const Mag2Cb &cb);
 
 private:
-    void init();
+    bool init();
 
     // callback for UAVCAN messages
     void handle_mag_msg(const Vector3f &mag);
 
-    static bool take_registry();
-    static void give_registry();
     static AP_Compass_UAVCAN* get_uavcan_backend(AP_UAVCAN* ap_uavcan, uint8_t node_id, uint8_t sensor_id);
 
     uint8_t  _instance;
-    bool _initialized;
 
     AP_UAVCAN* _ap_uavcan;
     uint8_t _node_id;

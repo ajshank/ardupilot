@@ -51,7 +51,7 @@ enum class SocketCanError
 #define CAN_MAX_INIT_TRIES_COUNT 100
 #define CAN_FILTER_NUMBER 8
 
-class CAN: public AP_HAL::CAN {
+class CAN: public AP_HAL::CANHal {
 public:
     CAN(int socket_fd=0)
       : _fd(socket_fd)
@@ -67,7 +67,7 @@ public:
     void reset() override;
 
     bool is_initialized() override;
-    
+
     int32_t tx_pending() override;
 
     int32_t available() override;
@@ -181,14 +181,14 @@ public:
     ~CANManager() { }
 
     //These methods belong to AP_HAL::CANManager
-    
+
     virtual bool begin(uint32_t bitrate, uint8_t can_number) override;
 
-    virtual void initialized(bool val);
-    virtual bool is_initialized();
+    virtual void initialized(bool val) override;
+    virtual bool is_initialized() override;
 
     //These methods belong to ICanDriver
-    
+
     virtual CAN* getIface(uint8_t iface_index) override;
 
     virtual uint8_t getNumIfaces() const override { return _ifaces.size(); }

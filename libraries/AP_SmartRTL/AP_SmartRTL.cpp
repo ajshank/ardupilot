@@ -13,6 +13,10 @@
 
 #include "AP_SmartRTL.h"
 
+#include <AP_AHRS/AP_AHRS.h>
+#include <AP_Logger/AP_Logger.h>
+#include <GCS_MAVLink/GCS.h>
+
 extern const AP_HAL::HAL& hal;
 
 const AP_Param::GroupInfo AP_SmartRTL::var_info[] = {
@@ -346,6 +350,14 @@ void AP_SmartRTL::run_background_cleanup()
 
     // perform routine cleanup which removes 10 to 50 points if possible
     routine_cleanup(path_points_count, path_points_completed_limit);
+
+    // warn if buffer is about to be filled
+    uint32_t now_ms = AP_HAL::millis();
+    if ((path_points_count >0) && (path_points_count >= _path_points_max - 9) && (now_ms - _last_low_space_notify_ms > 10000)) {
+        gcs().send_text(MAV_SEVERITY_INFO, "SmartRTL Low on space!");
+       _last_low_space_notify_ms = now_ms;
+    }
+
 }
 
 // routine cleanup is called regularly from run_background_cleanup
@@ -813,7 +825,7 @@ AP_SmartRTL::dist_point AP_SmartRTL::segment_segment_dist(const Vector3f &p1, co
     return {dP.length(), midpoint};
 }
 
-// de-activate SmartRTL, send warning to GCS and log to dataflash
+// de-activate SmartRTL, send warning to GCS and logger
 void AP_SmartRTL::deactivate(SRTL_Actions action, const char *reason)
 {
     _active = false;
@@ -825,7 +837,7 @@ void AP_SmartRTL::deactivate(SRTL_Actions action, const char *reason)
 void AP_SmartRTL::log_action(SRTL_Actions action, const Vector3f &point)
 {
     if (!_example_mode) {
-        DataFlash_Class::instance()->Log_Write_SRTL(_active, _path_points_count, _path_points_max, action, point);
+        AP::logger().Write_SRTL(_active, _path_points_count, _path_points_max, action, point);
     }
 }
 

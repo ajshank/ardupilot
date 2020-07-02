@@ -19,7 +19,6 @@
 
 #include <AP_HAL/AP_HAL.h>
 #include <AP_HAL/I2CDevice.h>
-#include <AP_Common/Semaphore.h>
 
 #include <AP_BoardConfig/AP_BoardConfig.h>
 #include "OreoLED_I2C.h"
@@ -77,15 +76,19 @@ void OreoLED_I2C::update()
     }
 
     if (mode_firmware_update()) {
-        return;    // don't go any further if the Pixhawk is in firmware update
+        return;    // don't go any further if in firmware update
     }
 
     if (mode_init()) {
-        return;    // don't go any further if the Pixhawk is initializing
+        return;    // don't go any further if initializing
     }
 
     if (mode_failsafe_radio()) {
-        return;    // don't go any further if the Pixhawk is is in radio failsafe
+        return;    // don't go any further if in radio failsafe
+    }
+
+    if (mode_failsafe_gcs()) {
+        return;    // don't go any further if in gcs failsafe
     }
 
     set_standard_colors();
@@ -120,7 +123,7 @@ bool OreoLED_I2C::slow_counter()
 }
 
 
-// Procedure for when Pixhawk is in FW update / bootloader
+// Procedure for when in FW update / bootloader
 // Makes all LEDs go into color cycle mode
 // Returns true if firmware update in progress. False if not
 bool OreoLED_I2C::mode_firmware_update()
@@ -146,7 +149,7 @@ bool OreoLED_I2C::mode_init()
 }
 
 
-// Procedure for when Pixhawk is in radio failsafe
+// Procedure for when in radio failsafe
 // LEDs perform alternating Red X pattern
 bool OreoLED_I2C::mode_failsafe_radio()
 {
@@ -157,6 +160,20 @@ bool OreoLED_I2C::mode_failsafe_radio()
         set_rgb(OREOLED_BACKRIGHT, OREOLED_PATTERN_STROBE, 255, 0, 0,0,0,0,PERIOD_SLOW,0);
     }
     return AP_Notify::flags.failsafe_radio;
+}
+
+
+// Procedure for when in GCS failsafe
+// LEDs perform alternating yellow X pattern
+bool OreoLED_I2C::mode_failsafe_gcs()
+{
+    if (AP_Notify::flags.failsafe_gcs) {
+        set_rgb(OREOLED_FRONTLEFT, OREOLED_PATTERN_STROBE, 255, 50, 0,0,0,0,PERIOD_SLOW,0);
+        set_rgb(OREOLED_FRONTRIGHT, OREOLED_PATTERN_STROBE, 255, 50, 0,0,0,0,PERIOD_SLOW,PO_ALTERNATE);
+        set_rgb(OREOLED_BACKLEFT, OREOLED_PATTERN_STROBE, 255, 50, 0,0,0,0,PERIOD_SLOW,PO_ALTERNATE);
+        set_rgb(OREOLED_BACKRIGHT, OREOLED_PATTERN_STROBE, 255, 50, 0,0,0,0,PERIOD_SLOW,0);
+    }
+    return AP_Notify::flags.failsafe_gcs;
 }
 
 
@@ -220,7 +237,7 @@ bool OreoLED_I2C::mode_failsafe_batt()
 }
 
 
-// Procedure for when Pixhawk is in an autopilot mode
+// Procedure for when in an autopilot mode
 // Makes all LEDs strobe super fast using standard colors
 bool OreoLED_I2C::mode_auto_flight()
 {
@@ -257,7 +274,7 @@ bool OreoLED_I2C::mode_auto_flight()
 }
 
 
-// Procedure for when Pixhawk is in a pilot controlled mode
+// Procedure for when in a pilot controlled mode
 // All LEDs use standard pattern and colors
 bool OreoLED_I2C::mode_pilot_flight()
 {
@@ -425,7 +442,7 @@ void OreoLED_I2C::boot_leds(void)
     }
 }
 
-// update_timer - called by scheduler and updates PX4 driver with commands
+// update_timer - called by scheduler and updates driver with commands
 void OreoLED_I2C::update_timer(void)
 {
     WITH_SEMAPHORE(_sem);
@@ -440,7 +457,7 @@ void OreoLED_I2C::update_timer(void)
         boot_leds();
     }
 
-    // send a sync every 4.1s. The PX4 driver uses 4ms, but using
+    // send a sync every 4.1s. The driver uses 4ms, but using
     // exactly 4ms does not work. It seems that the oreoled firmware
     // relies on the inaccuracy of the NuttX scheduling for this to
     // work, and exactly 4ms from ChibiOS causes syncronisation to
@@ -545,11 +562,11 @@ void OreoLED_I2C::send_sync(void)
 
 
 // Handle an LED_CONTROL mavlink message
-void OreoLED_I2C::handle_led_control(mavlink_message_t *msg)
+void OreoLED_I2C::handle_led_control(const mavlink_message_t &msg)
 {
     // decode mavlink message
     mavlink_led_control_t packet;
-    mavlink_msg_led_control_decode(msg, &packet);
+    mavlink_msg_led_control_decode(&msg, &packet);
 
     // exit immediately if instance is invalid
     if (packet.instance >= OREOLED_NUM_LEDS && packet.instance != OREOLED_INSTANCE_ALL) {

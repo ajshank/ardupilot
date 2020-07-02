@@ -26,13 +26,12 @@
 
 extern const AP_HAL::HAL& hal;
 
-
 // init
 void AP_MotorsCoax::init(motor_frame_class frame_class, motor_frame_type frame_type)
 {
     // make sure 6 output channels are mapped
-    for (uint8_t i=0; i<6; i++) {
-        add_motor_num(CH_1+i);
+    for (uint8_t i = 0; i < 6; i++) {
+        add_motor_num(CH_1 + i);
     }
 
     // set the motor_enabled flag so that the main ESC can be calibrated like other frame types
@@ -40,10 +39,10 @@ void AP_MotorsCoax::init(motor_frame_class frame_class, motor_frame_type frame_t
     motor_enabled[AP_MOTORS_MOT_6] = true;
 
     // setup actuator scaling
-    for (uint8_t i=0; i<NUM_ACTUATORS; i++) {
+    for (uint8_t i = 0; i < NUM_ACTUATORS; i++) {
         SRV_Channels::set_angle(SRV_Channels::get_motor_function(i), AP_MOTORS_COAX_SERVO_INPUT_RANGE);
     }
-    
+
     // record successful initialisation if what we setup was the desired frame_class
     _flags.initialised_ok = (frame_class == MOTOR_FRAME_COAX);
 }
@@ -55,7 +54,7 @@ void AP_MotorsCoax::set_frame_class_and_type(motor_frame_class frame_class, moto
 }
 
 // set update rate to motors - a value in hertz
-void AP_MotorsCoax::set_update_rate( uint16_t speed_hz )
+void AP_MotorsCoax::set_update_rate(uint16_t speed_hz)
 {
     // record requested speed
     _speed_hz = speed_hz;
@@ -68,33 +67,37 @@ void AP_MotorsCoax::set_update_rate( uint16_t speed_hz )
 
 void AP_MotorsCoax::output_to_motors()
 {
-    switch (_spool_mode) {
-        case SHUT_DOWN:
+    switch (_spool_state) {
+        case SpoolState::SHUT_DOWN:
             // sends minimum values out to the motors
             rc_write_angle(AP_MOTORS_MOT_1, _roll_radio_passthrough * AP_MOTORS_COAX_SERVO_INPUT_RANGE);
             rc_write_angle(AP_MOTORS_MOT_2, _pitch_radio_passthrough * AP_MOTORS_COAX_SERVO_INPUT_RANGE);
             rc_write_angle(AP_MOTORS_MOT_3, -_roll_radio_passthrough * AP_MOTORS_COAX_SERVO_INPUT_RANGE);
             rc_write_angle(AP_MOTORS_MOT_4, -_pitch_radio_passthrough * AP_MOTORS_COAX_SERVO_INPUT_RANGE);
-            rc_write(AP_MOTORS_MOT_5, get_pwm_output_min());
-            rc_write(AP_MOTORS_MOT_6, get_pwm_output_min());
+            rc_write(AP_MOTORS_MOT_5, output_to_pwm(0));
+            rc_write(AP_MOTORS_MOT_6, output_to_pwm(0));
             break;
-        case SPIN_WHEN_ARMED:
+        case SpoolState::GROUND_IDLE:
             // sends output to motors when armed but not flying
-            for (uint8_t i=0; i<NUM_ACTUATORS; i++) {
-                rc_write_angle(AP_MOTORS_MOT_1+i, _spin_up_ratio * _actuator_out[i] * AP_MOTORS_COAX_SERVO_INPUT_RANGE);
+            for (uint8_t i = 0; i < NUM_ACTUATORS; i++) {
+                rc_write_angle(AP_MOTORS_MOT_1 + i, _spin_up_ratio * _actuator_out[i] * AP_MOTORS_COAX_SERVO_INPUT_RANGE);
             }
-            rc_write(AP_MOTORS_MOT_5, calc_spin_up_to_pwm());
-            rc_write(AP_MOTORS_MOT_6, calc_spin_up_to_pwm());
+            set_actuator_with_slew(_actuator[5], actuator_spin_up_to_ground_idle());
+            set_actuator_with_slew(_actuator[6], actuator_spin_up_to_ground_idle());
+            rc_write(AP_MOTORS_MOT_5, output_to_pwm(_actuator[5]));
+            rc_write(AP_MOTORS_MOT_6, output_to_pwm(_actuator[6]));
             break;
-        case SPOOL_UP:
-        case THROTTLE_UNLIMITED:
-        case SPOOL_DOWN:
+        case SpoolState::SPOOLING_UP:
+        case SpoolState::THROTTLE_UNLIMITED:
+        case SpoolState::SPOOLING_DOWN:
             // set motor output based on thrust requests
-            for (uint8_t i=0; i<NUM_ACTUATORS; i++) {
-                rc_write_angle(AP_MOTORS_MOT_1+i, _actuator_out[i] * AP_MOTORS_COAX_SERVO_INPUT_RANGE);
+            for (uint8_t i = 0; i < NUM_ACTUATORS; i++) {
+                rc_write_angle(AP_MOTORS_MOT_1 + i, _actuator_out[i] * AP_MOTORS_COAX_SERVO_INPUT_RANGE);
             }
-            rc_write(AP_MOTORS_MOT_5, calc_thrust_to_pwm(_thrust_yt_ccw));
-            rc_write(AP_MOTORS_MOT_6, calc_thrust_to_pwm(_thrust_yt_cw));
+            set_actuator_with_slew(_actuator[5], thrust_to_actuator(_thrust_yt_ccw));
+            set_actuator_with_slew(_actuator[6], thrust_to_actuator(_thrust_yt_cw));
+            rc_write(AP_MOTORS_MOT_5, output_to_pwm(_actuator[5]));
+            rc_write(AP_MOTORS_MOT_6, output_to_pwm(_actuator[6]));
             break;
     }
 }
@@ -134,9 +137,9 @@ void AP_MotorsCoax::output_armed_stabilizing()
 
     // apply voltage and air pressure compensation
     const float compensation_gain = get_compensation_gain();
-    roll_thrust = _roll_in * compensation_gain;
-    pitch_thrust = _pitch_in * compensation_gain;
-    yaw_thrust = _yaw_in * compensation_gain;
+    roll_thrust = (_roll_in + _roll_in_ff) * compensation_gain;
+    pitch_thrust = (_pitch_in + _pitch_in_ff) * compensation_gain;
+    yaw_thrust = (_yaw_in + _yaw_in_ff) * compensation_gain;
     throttle_thrust = get_throttle() * compensation_gain;
     throttle_avg_max = _throttle_avg_max * compensation_gain;
 
@@ -158,9 +161,10 @@ void AP_MotorsCoax::output_armed_stabilizing()
     if (is_zero(rp_thrust_max)) {
         rp_scale = 1.0f;
     } else {
-        rp_scale = constrain_float((1.0f - MIN(fabsf(yaw_thrust), 0.5f*(float)_yaw_headroom/1000.0f)) / rp_thrust_max, 0.0f, 1.0f);
+        rp_scale = constrain_float((1.0f - MIN(fabsf(yaw_thrust), 0.5f * (float)_yaw_headroom / 1000.0f)) / rp_thrust_max, 0.0f, 1.0f);
         if (rp_scale < 1.0f) {
-            limit.roll_pitch = true;
+            limit.roll = true;
+            limit.pitch = true;
         }
     }
 
@@ -182,6 +186,8 @@ void AP_MotorsCoax::output_armed_stabilizing()
 
     // calculate the throttle setting for the lift fan
     thrust_out = throttle_avg_max + thr_adj;
+    // compensation_gain can never be zero
+    _throttle_out = thrust_out / compensation_gain;
 
     if (fabsf(yaw_thrust) > thrust_out) {
         yaw_thrust = constrain_float(yaw_thrust, -thrust_out, thrust_out);
@@ -192,23 +198,24 @@ void AP_MotorsCoax::output_armed_stabilizing()
     _thrust_yt_cw = thrust_out - 0.5f * yaw_thrust;
 
     // limit thrust out for calculation of actuator gains
-    float thrust_out_actuator = constrain_float(MAX(_throttle_hover*0.5f,thrust_out), 0.5f, 1.0f);
+    float thrust_out_actuator = constrain_float(MAX(_throttle_hover * 0.5f, thrust_out), 0.5f, 1.0f);
 
     if (is_zero(thrust_out)) {
-        limit.roll_pitch = true;
+        limit.roll = true;
+        limit.pitch = true;
     }
     // force of a lifting surface is approximately equal to the angle of attack times the airflow velocity squared
     // static thrust is proportional to the airflow velocity squared
     // therefore the torque of the roll and pitch actuators should be approximately proportional to
     // the angle of attack multiplied by the static thrust.
-    _actuator_out[0] = roll_thrust/thrust_out_actuator;
-    _actuator_out[1] = pitch_thrust/thrust_out_actuator;
+    _actuator_out[0] = roll_thrust / thrust_out_actuator;
+    _actuator_out[1] = pitch_thrust / thrust_out_actuator;
     if (fabsf(_actuator_out[0]) > 1.0f) {
-        limit.roll_pitch = true;
+        limit.roll = true;
         _actuator_out[0] = constrain_float(_actuator_out[0], -1.0f, 1.0f);
     }
     if (fabsf(_actuator_out[1]) > 1.0f) {
-        limit.roll_pitch = true;
+        limit.pitch = true;
         _actuator_out[1] = constrain_float(_actuator_out[1], -1.0f, 1.0f);
     }
     _actuator_out[2] = -_actuator_out[0];

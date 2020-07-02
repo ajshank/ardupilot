@@ -1,6 +1,14 @@
 #pragma once
 
 #include <AP_Common/AP_Common.h>
+#include "RC_Channel.h"
+
+#if GRIPPER_ENABLED == ENABLED
+ # include <AP_Gripper/AP_Gripper.h>
+#endif
+#if MODE_FOLLOW_ENABLED == ENABLED
+ # include <AP_Follow/AP_Follow.h>
+#endif
 
 // Global parameter class.
 //
@@ -19,20 +27,20 @@ public:
     // Parameter identities.
     //
     // The enumeration defined here is used to ensure that every parameter
-    // or parameter group has a unique ID number.	This number is used by
+    // or parameter group has a unique ID number.  This number is used by
     // AP_Param to store and locate parameters in EEPROM.
     //
     // Note that entries without a number are assigned the next number after
-    // the entry preceding them.	When adding new entries, ensure that they
+    // the entry preceding them. When adding new entries, ensure that they
     // don't overlap.
     //
     // Try to group related variables together, and assign them a set
-    // range in the enumeration.	Place these groups in numerical order
+    // range in the enumeration. Place these groups in numerical order
     // at the end of the enumeration.
     //
     // WARNING: Care should be taken when editing this enumeration as the
-    //			AP_Param load/save code depends on the values here to identify
-    //			variables saved in EEPROM.
+    //          AP_Param load/save code depends on the values here to identify
+    //          variables saved in EEPROM.
     //
     //
     enum {
@@ -86,7 +94,7 @@ public:
                                                 // with next eeprom number
                                                 // change
         k_param_toy_yaw_rate,                   // deprecated - remove
-        k_param_crosstrack_min_distance,	// deprecated - remove with next eeprom number change
+        k_param_crosstrack_min_distance,    // deprecated - remove with next eeprom number change
         k_param_rssi_pin,                   // unused, replaced by rssi_ library parameters
         k_param_throttle_accel_enabled,     // deprecated - remove
         k_param_wp_yaw_behavior,
@@ -174,7 +182,7 @@ public:
         k_param_disarm_delay,
         k_param_fs_crash_check,
         k_param_throw_motor_start,
-        k_param_terrain_follow,    // 94
+        k_param_rtl_alt_type,
         k_param_avoid,
         k_param_avoidance_adsb,
 
@@ -207,7 +215,7 @@ public:
         k_param_ch10_option_old,
         k_param_ch11_option_old,
         k_param_ch12_option_old,
-        k_param_takeoff_trigger_dz,
+        k_param_takeoff_trigger_dz_old,
         k_param_gcs3,
         k_param_gcs_pid_mask,    // 126
 
@@ -227,7 +235,7 @@ public:
         k_param_curr_amp_per_volt,  // deprecated - can be deleted
         k_param_input_voltage,  // deprecated - can be deleted
         k_param_pack_capacity,  // deprecated - can be deleted
-        k_param_compass_enabled,
+        k_param_compass_enabled_deprecated,
         k_param_compass,
         k_param_rangefinder_enabled_old, // deprecated
         k_param_frame_type,
@@ -245,10 +253,10 @@ public:
         // 160: Navigation parameters
         //
         k_param_rtl_altitude = 160,
-        k_param_crosstrack_gain,	// deprecated - remove with next eeprom number change
+        k_param_crosstrack_gain,    // deprecated - remove with next eeprom number change
         k_param_rtl_loiter_time,
         k_param_rtl_alt_final,
-        k_param_tilt_comp, 	//164	deprecated - remove with next eeprom number change
+        k_param_tilt_comp, // 164 deprecated - remove with next eeprom number change
 
 
         //
@@ -259,7 +267,7 @@ public:
         k_param_camera_mount2,      // deprecated
 
         //
-        // Batery monitoring parameters
+        // Battery monitoring parameters
         //
         k_param_battery_volt_pin = 168, // deprecated - can be deleted
         k_param_battery_curr_pin,   // 169 deprecated - can be deleted
@@ -285,8 +293,8 @@ public:
         k_param_throttle_trim,          // remove
         k_param_esc_calibrate,
         k_param_radio_tuning,
-        k_param_radio_tuning_high,
-        k_param_radio_tuning_low,
+        k_param_radio_tuning_high_old,   // unused
+        k_param_radio_tuning_low_old,    // unused
         k_param_rc_speed = 192,
         k_param_failsafe_battery_enabled, // unused - moved to AP_BattMonitor
         k_param_throttle_mid,           // remove
@@ -358,9 +366,11 @@ public:
         k_param_rpm_sensor,
         k_param_autotune_min_d, // remove
         k_param_arming, // 252  - AP_Arming
-        k_param_DataFlash = 253, // 253 - Logging Group
+        k_param_logger = 253, // 253 - Logging Group
 
         // 254,255: reserved
+
+        k_param_vehicle = 257, // vehicle common block of parameters
 
         // the k_param_* space is 9-bits in size
         // 511: reserved
@@ -376,7 +386,6 @@ public:
 
     AP_Float        throttle_filt;
     AP_Int16        throttle_behavior;
-    AP_Int16        takeoff_trigger_dz;
     AP_Float        pilot_takeoff_alt;
 
     AP_Int16        rtl_altitude;
@@ -389,7 +398,6 @@ public:
     AP_Int8         failsafe_gcs;               // ground station failsafe behavior
     AP_Int16        gps_hdop_good;              // GPS Hdop value at or below this value represent a good position
 
-    AP_Int8         compass_enabled;
     AP_Int8         super_simple;
     AP_Int16        rtl_alt_final;
     AP_Int16        rtl_climb_min;              // rtl minimum climb in cm
@@ -429,8 +437,6 @@ public:
     AP_Int32        log_bitmask;
     AP_Int8         esc_calibrate;
     AP_Int8         radio_tuning;
-    AP_Int16        radio_tuning_high;
-    AP_Int16        radio_tuning_low;
     AP_Int8         frame_type;
     AP_Int8         disarm_delay;
 
@@ -444,9 +450,7 @@ public:
     AP_Int8         throw_motor_start;
 #endif
 
-#if AP_TERRAIN_AVAILABLE && AC_TERRAIN
-    AP_Int8         terrain_follow;
-#endif
+    AP_Int8         rtl_alt_type;
 
     AP_Int16                rc_speed; // speed of fast RC Channels in Hz
 
@@ -479,7 +483,7 @@ public:
     AP_Float wp_navalt_min;
 
     // button checking
-    AP_Button button;
+    AP_Button *button_ptr;
 
 #if STATS_ENABLED == ENABLED
     // vehicle statistics
@@ -505,11 +509,6 @@ public:
 #if BEACON_ENABLED == ENABLED
     // beacon (non-GPS positioning) library
     AP_Beacon beacon;
-#endif
-
-#if VISUAL_ODOMETRY_ENABLED == ENABLED
-    // Visual Odometry camera
-    AP_VisualOdom visual_odom;
 #endif
 
 #if PROXIMITY_ENABLED == ENABLED
@@ -583,6 +582,40 @@ public:
     // we need a pointer to autotune for the G2 table
     void *autotune_ptr;
 #endif
+
+#ifdef ENABLE_SCRIPTING
+    AP_Scripting scripting;
+#endif // ENABLE_SCRIPTING
+
+    AP_Float tuning_min;
+    AP_Float tuning_max;
+
+#if AC_OAPATHPLANNER_ENABLED == ENABLED
+    // object avoidance path planning
+    AP_OAPathPlanner oa;
+#endif
+
+#if MODE_SYSTEMID_ENABLED == ENABLED
+    // we need a pointer to the mode for the G2 table
+    void *mode_systemid_ptr;
+#endif
+
+    // vibration failsafe enable/disable
+    AP_Int8 fs_vibe_enabled;
+
+    // Failsafe options bitmask #36
+    AP_Int32 fs_options;
+
+#if MODE_AUTOROTATE_ENABLED == ENABLED
+    // Autonmous autorotation
+    AC_Autorotation arot;
+#endif
+
+#if MODE_ZIGZAG_ENABLED == ENABLED
+    // we need a pointer to the mode for the G2 table
+    void *mode_zigzag_ptr;
+#endif
+
 };
 
 extern const AP_Param::Info        var_info[];

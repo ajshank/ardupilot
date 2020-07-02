@@ -18,6 +18,7 @@
 #include "hal.h"
 #include "usbcfg.h"
 #include "stm32_util.h"
+#include "watchdog.h"
 
 
 /*===========================================================================*/
@@ -35,7 +36,7 @@
 /**
  * @brief   STM32 GPIO static initialization data.
  */
-#ifdef STM32F100_MCUCONF
+#if defined(STM32F100_MCUCONF) || defined(STM32F103_MCUCONF) || defined(STM32F105_MCUCONF)
 
 const PALConfig pal_default_config =
 {
@@ -46,7 +47,7 @@ const PALConfig pal_default_config =
   {VAL_GPIOE_ODR, VAL_GPIOE_CRL, VAL_GPIOE_CRH},
 };
 
-#else //Other than STM32F1 series
+#else //Other than STM32F1/F3 series
 
 /**
  * @brief   Type of STM32 GPIO port setup.
@@ -169,8 +170,16 @@ static void stm32_gpio_init(void) {
 
   /* Enabling GPIO-related clocks, the mask comes from the
      registry header file.*/
+#if defined(STM32H7)
+  rccResetAHB4(STM32_GPIO_EN_MASK);
+  rccEnableAHB4(STM32_GPIO_EN_MASK, true);
+#elif defined(STM32F3)
+  rccResetAHB(STM32_GPIO_EN_MASK);
+  rccEnableAHB(STM32_GPIO_EN_MASK, true);
+#else
   rccResetAHB1(STM32_GPIO_EN_MASK);
   rccEnableAHB1(STM32_GPIO_EN_MASK, true);
+#endif
 
   /* Initializing all the defined GPIO ports.*/
 #if STM32_HAS_GPIOA
@@ -216,15 +225,22 @@ static void stm32_gpio_init(void) {
  *          and before any other initialization.
  */
 void __early_init(void) {
-#ifndef STM32F100_MCUCONF
+#if !defined(STM32F1)
   stm32_gpio_init();
 #endif
   stm32_clock_init();
+#if defined(HAL_DISABLE_DCACHE)
+  SCB_DisableDCache();
+#endif
 }
 
 void __late_init(void) {
   halInit();
   chSysInit();
+  stm32_watchdog_save_reason();
+#ifndef HAL_BOOTLOADER_BUILD
+  stm32_watchdog_clear_reason();
+#endif
 #if CH_CFG_USE_HEAP == TRUE
   malloc_init();
 #endif
@@ -238,11 +254,8 @@ void __late_init(void) {
  * @brief   SDC card detection.
  */
 bool sdc_lld_is_card_inserted(SDCDriver *sdcp) {
-  static bool last_status = false;
-
-  if (blkIsTransferring(sdcp))
-    return last_status;
-  return last_status = (bool)palReadPad(GPIOC, 11);
+    (void)sdcp;
+    return true;
 }
 
 /**

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "AP_Baro.h"
-#include <AP_Common/Semaphore.h>
 
 class AP_Baro_Backend
 {
@@ -31,7 +30,7 @@ protected:
     void _copy_to_frontend(uint8_t instance, float pressure, float temperature);
 
     // semaphore for access to shared frontend data
-    HAL_Semaphore_Recursive _sem;
+    HAL_Semaphore _sem;
 
     virtual void update_healthy_flag(uint8_t instance);
 

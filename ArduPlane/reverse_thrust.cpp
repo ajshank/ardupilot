@@ -29,8 +29,8 @@ bool Plane::allow_reverse_thrust(void) const
         return false;
     }
 
-    switch (control_mode) {
-    case AUTO:
+    switch (control_mode->mode_number()) {
+    case Mode::Number::AUTO:
         {
         uint16_t nav_cmd = mission.get_current_nav_cmd().id;
 
@@ -64,24 +64,27 @@ bool Plane::allow_reverse_thrust(void) const
         }
         break;
 
-    case LOITER:
+    case Mode::Number::LOITER:
         allow |= (g.use_reverse_thrust & USE_REVERSE_THRUST_LOITER);
         break;
-    case RTL:
+    case Mode::Number::RTL:
         allow |= (g.use_reverse_thrust & USE_REVERSE_THRUST_RTL);
         break;
-    case CIRCLE:
+    case Mode::Number::CIRCLE:
         allow |= (g.use_reverse_thrust & USE_REVERSE_THRUST_CIRCLE);
         break;
-    case CRUISE:
+    case Mode::Number::CRUISE:
         allow |= (g.use_reverse_thrust & USE_REVERSE_THRUST_CRUISE);
         break;
-    case FLY_BY_WIRE_B:
+    case Mode::Number::FLY_BY_WIRE_B:
         allow |= (g.use_reverse_thrust & USE_REVERSE_THRUST_FBWB);
         break;
-    case AVOID_ADSB:
-    case GUIDED:
+    case Mode::Number::AVOID_ADSB:
+    case Mode::Number::GUIDED:
         allow |= (g.use_reverse_thrust & USE_REVERSE_THRUST_GUIDED);
+        break;
+    case Mode::Number::TAKEOFF:
+        allow = false;
         break;
     default:
         // all other control_modes are auto_throttle_mode=false.
@@ -90,7 +93,8 @@ bool Plane::allow_reverse_thrust(void) const
         break;
     }
 
-    return allow;
+    // cope with bitwise ops above
+    return allow != false;
 }
 
 /*

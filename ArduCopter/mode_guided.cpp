@@ -1,5 +1,7 @@
 #include "Copter.h"
 
+#if MODE_GUIDED_ENABLED == ENABLED
+
 /*
  * Init and run calls for guided flight mode
  */
@@ -36,30 +38,36 @@ struct Guided_Limit {
 } guided_limit;
 
 // guided_init - initialise guided controller
-bool Copter::ModeGuided::init(bool ignore_checks)
+bool ModeGuided::init(bool ignore_checks)
 {
-    if (copter.position_ok() || ignore_checks) {
-        // start in position control mode
-        pos_control_start();
-        return true;
-    }else{
-        return false;
-    }
+    // start in position control mode
+    pos_control_start();
+    return true;
 }
 
 
 // do_user_takeoff_start - initialises waypoint controller to implement take-off
-bool Copter::ModeGuided::do_user_takeoff_start(float final_alt_above_home)
+bool ModeGuided::do_user_takeoff_start(float takeoff_alt_cm)
 {
     guided_mode = Guided_TakeOff;
 
     // initialise wpnav destination
-    Location_Class target_loc = copter.current_loc;
-    target_loc.set_alt_cm(final_alt_above_home, Location_Class::ALT_FRAME_ABOVE_HOME);
+    Location target_loc = copter.current_loc;
+    Location::AltFrame frame = Location::AltFrame::ABOVE_HOME;
+    if (wp_nav->rangefinder_used_and_healthy() &&
+            wp_nav->get_terrain_source() == AC_WPNav::TerrainSource::TERRAIN_FROM_RANGEFINDER &&
+            takeoff_alt_cm < copter.rangefinder.max_distance_cm_orient(ROTATION_PITCH_270)) {
+        // can't takeoff downwards
+        if (takeoff_alt_cm <= copter.rangefinder_state.alt_cm) {
+            return false;
+        }
+        frame = Location::AltFrame::ABOVE_TERRAIN;
+    }
+    target_loc.set_alt_cm(takeoff_alt_cm, frame);
 
     if (!wp_nav->set_wp_destination(target_loc)) {
         // failure to set destination can only be because of missing terrain data
-        copter.Log_Write_Error(ERROR_SUBSYSTEM_NAVIGATION, ERROR_CODE_FAILED_TO_SET_DESTINATION);
+        AP::logger().Write_Error(LogErrorSubsystem::NAVIGATION, LogErrorCode::FAILED_TO_SET_DESTINATION);
         // failure is propagated to GCS with NAK
         return false;
     }
@@ -77,7 +85,7 @@ bool Copter::ModeGuided::do_user_takeoff_start(float final_alt_above_home)
 }
 
 // initialise guided mode's position controller
-void Copter::ModeGuided::pos_control_start()
+void ModeGuided::pos_control_start()
 {
     // set to position control mode
     guided_mode = Guided_WP;
@@ -97,13 +105,13 @@ void Copter::ModeGuided::pos_control_start()
 }
 
 // initialise guided mode's velocity controller
-void Copter::ModeGuided::vel_control_start()
+void ModeGuided::vel_control_start()
 {
     // set guided_mode to velocity controller
     guided_mode = Guided_Velocity;
 
     // initialise horizontal speed, acceleration
-    pos_control->set_max_speed_xy(wp_nav->get_speed_xy());
+    pos_control->set_max_speed_xy(wp_nav->get_default_speed_xy());
     pos_control->set_max_accel_xy(wp_nav->get_wp_acceleration());
 
     // initialize vertical speeds and acceleration
@@ -115,7 +123,7 @@ void Copter::ModeGuided::vel_control_start()
 }
 
 // initialise guided mode's posvel controller
-void Copter::ModeGuided::posvel_control_start()
+void ModeGuided::posvel_control_start()
 {
     // set guided_mode to velocity controller
     guided_mode = Guided_PosVel;
@@ -123,7 +131,7 @@ void Copter::ModeGuided::posvel_control_start()
     pos_control->init_xy_controller();
 
     // set speed and acceleration from wpnav's speed and acceleration
-    pos_control->set_max_speed_xy(wp_nav->get_speed_xy());
+    pos_control->set_max_speed_xy(wp_nav->get_default_speed_xy());
     pos_control->set_max_accel_xy(wp_nav->get_wp_acceleration());
 
     const Vector3f& curr_pos = inertial_nav.get_position();
@@ -134,21 +142,26 @@ void Copter::ModeGuided::posvel_control_start()
     pos_control->set_desired_velocity_xy(curr_vel.x, curr_vel.y);
 
     // set vertical speed and acceleration
-    pos_control->set_max_speed_z(wp_nav->get_speed_down(), wp_nav->get_speed_up());
+    pos_control->set_max_speed_z(wp_nav->get_default_speed_down(), wp_nav->get_default_speed_up());
     pos_control->set_max_accel_z(wp_nav->get_accel_z());
 
     // pilot always controls yaw
     auto_yaw.set_mode(AUTO_YAW_HOLD);
 }
 
+bool ModeGuided::is_taking_off() const
+{
+    return guided_mode == Guided_TakeOff;
+}
+
 // initialise guided mode's angle controller
-void Copter::ModeGuided::angle_control_start()
+void ModeGuided::angle_control_start()
 {
     // set guided_mode to velocity controller
     guided_mode = Guided_Angle;
 
     // set vertical speed and acceleration
-    pos_control->set_max_speed_z(wp_nav->get_speed_down(), wp_nav->get_speed_up());
+    pos_control->set_max_speed_z(wp_nav->get_default_speed_down(), wp_nav->get_default_speed_up());
     pos_control->set_max_accel_z(wp_nav->get_accel_z());
 
     // initialise position and desired velocity
@@ -173,7 +186,7 @@ void Copter::ModeGuided::angle_control_start()
 // guided_set_destination - sets guided mode's target destination
 // Returns true if the fence is enabled and guided waypoint is within the fence
 // else return false if the waypoint is outside the fence
-bool Copter::ModeGuided::set_destination(const Vector3f& destination, bool use_yaw, float yaw_cd, bool use_yaw_rate, float yaw_rate_cds, bool relative_yaw)
+bool ModeGuided::set_destination(const Vector3f& destination, bool use_yaw, float yaw_cd, bool use_yaw_rate, float yaw_rate_cds, bool relative_yaw, bool terrain_alt)
 {
     // ensure we are in position control mode
     if (guided_mode != Guided_WP) {
@@ -182,9 +195,9 @@ bool Copter::ModeGuided::set_destination(const Vector3f& destination, bool use_y
 
 #if AC_FENCE == ENABLED
     // reject destination if outside the fence
-    Location_Class dest_loc(destination);
+    const Location dest_loc(destination);
     if (!copter.fence.check_destination_within_fence(dest_loc)) {
-        copter.Log_Write_Error(ERROR_SUBSYSTEM_NAVIGATION, ERROR_CODE_DEST_OUTSIDE_FENCE);
+        AP::logger().Write_Error(LogErrorSubsystem::NAVIGATION, LogErrorCode::DEST_OUTSIDE_FENCE);
         // failure is propagated to GCS with NAK
         return false;
     }
@@ -194,25 +207,25 @@ bool Copter::ModeGuided::set_destination(const Vector3f& destination, bool use_y
     set_yaw_state(use_yaw, yaw_cd, use_yaw_rate, yaw_rate_cds, relative_yaw);
 
     // no need to check return status because terrain data is not used
-    wp_nav->set_wp_destination(destination, false);
+    wp_nav->set_wp_destination(destination, terrain_alt);
 
     // log target
     copter.Log_Write_GuidedTarget(guided_mode, destination, Vector3f());
     return true;
 }
 
-bool Copter::ModeGuided::get_wp(Location_Class& destination)
+bool ModeGuided::get_wp(Location& destination)
 {
     if (guided_mode != Guided_WP) {
         return false;
     }
-    return wp_nav->get_wp_destination(destination);
+    return wp_nav->get_oa_wp_destination(destination);
 }
 
 // sets guided mode's target from a Location object
 // returns false if destination could not be set (probably caused by missing terrain data)
 // or if the fence is enabled and guided waypoint is outside the fence
-bool Copter::ModeGuided::set_destination(const Location_Class& dest_loc, bool use_yaw, float yaw_cd, bool use_yaw_rate, float yaw_rate_cds, bool relative_yaw)
+bool ModeGuided::set_destination(const Location& dest_loc, bool use_yaw, float yaw_cd, bool use_yaw_rate, float yaw_rate_cds, bool relative_yaw)
 {
     // ensure we are in position control mode
     if (guided_mode != Guided_WP) {
@@ -223,7 +236,7 @@ bool Copter::ModeGuided::set_destination(const Location_Class& dest_loc, bool us
     // reject destination outside the fence.
     // Note: there is a danger that a target specified as a terrain altitude might not be checked if the conversion to alt-above-home fails
     if (!copter.fence.check_destination_within_fence(dest_loc)) {
-        copter.Log_Write_Error(ERROR_SUBSYSTEM_NAVIGATION, ERROR_CODE_DEST_OUTSIDE_FENCE);
+        AP::logger().Write_Error(LogErrorSubsystem::NAVIGATION, LogErrorCode::DEST_OUTSIDE_FENCE);
         // failure is propagated to GCS with NAK
         return false;
     }
@@ -231,7 +244,7 @@ bool Copter::ModeGuided::set_destination(const Location_Class& dest_loc, bool us
 
     if (!wp_nav->set_wp_destination(dest_loc)) {
         // failure to set destination can only be because of missing terrain data
-        copter.Log_Write_Error(ERROR_SUBSYSTEM_NAVIGATION, ERROR_CODE_FAILED_TO_SET_DESTINATION);
+        AP::logger().Write_Error(LogErrorSubsystem::NAVIGATION, LogErrorCode::FAILED_TO_SET_DESTINATION);
         // failure is propagated to GCS with NAK
         return false;
     }
@@ -245,7 +258,7 @@ bool Copter::ModeGuided::set_destination(const Location_Class& dest_loc, bool us
 }
 
 // guided_set_velocity - sets guided mode's target velocity
-void Copter::ModeGuided::set_velocity(const Vector3f& velocity, bool use_yaw, float yaw_cd, bool use_yaw_rate, float yaw_rate_cds, bool relative_yaw, bool log_request)
+void ModeGuided::set_velocity(const Vector3f& velocity, bool use_yaw, float yaw_cd, bool use_yaw_rate, float yaw_rate_cds, bool relative_yaw, bool log_request)
 {
     // check we are in velocity control mode
     if (guided_mode != Guided_Velocity) {
@@ -266,7 +279,7 @@ void Copter::ModeGuided::set_velocity(const Vector3f& velocity, bool use_yaw, fl
 }
 
 // set guided mode posvel target
-bool Copter::ModeGuided::set_destination_posvel(const Vector3f& destination, const Vector3f& velocity, bool use_yaw, float yaw_cd, bool use_yaw_rate, float yaw_rate_cds, bool relative_yaw)
+bool ModeGuided::set_destination_posvel(const Vector3f& destination, const Vector3f& velocity, bool use_yaw, float yaw_cd, bool use_yaw_rate, float yaw_rate_cds, bool relative_yaw)
 {
     // check we are in velocity control mode
     if (guided_mode != Guided_PosVel) {
@@ -275,9 +288,9 @@ bool Copter::ModeGuided::set_destination_posvel(const Vector3f& destination, con
 
 #if AC_FENCE == ENABLED
     // reject destination if outside the fence
-    Location_Class dest_loc(destination);
+    const Location dest_loc(destination);
     if (!copter.fence.check_destination_within_fence(dest_loc)) {
-        copter.Log_Write_Error(ERROR_SUBSYSTEM_NAVIGATION, ERROR_CODE_DEST_OUTSIDE_FENCE);
+        AP::logger().Write_Error(LogErrorSubsystem::NAVIGATION, LogErrorCode::DEST_OUTSIDE_FENCE);
         // failure is propagated to GCS with NAK
         return false;
     }
@@ -298,7 +311,7 @@ bool Copter::ModeGuided::set_destination_posvel(const Vector3f& destination, con
 }
 
 // set guided mode angle target
-void Copter::ModeGuided::set_angle(const Quaternion &q, float climb_rate_cms, bool use_yaw_rate, float yaw_rate_rads)
+void ModeGuided::set_angle(const Quaternion &q, float climb_rate_cms, bool use_yaw_rate, float yaw_rate_rads)
 {
     // check we are in velocity control mode
     if (guided_mode != Guided_Angle) {
@@ -317,7 +330,7 @@ void Copter::ModeGuided::set_angle(const Quaternion &q, float climb_rate_cms, bo
     guided_angle_state.update_time_ms = millis();
 
     // interpret positive climb rate as triggering take-off
-    if (motors->armed() && !ap.auto_armed && (guided_angle_state.climb_rate_cms > 0.0f)) {
+    if (motors->armed() && !copter.ap.auto_armed && (guided_angle_state.climb_rate_cms > 0.0f)) {
         copter.set_auto_armed(true);
     }
 
@@ -329,7 +342,7 @@ void Copter::ModeGuided::set_angle(const Quaternion &q, float climb_rate_cms, bo
 
 // guided_run - runs the guided controller
 // should be called at 100hz or more
-void Copter::ModeGuided::run()
+void ModeGuided::run()
 {
     // call the correct auto controller
     switch (guided_mode) {
@@ -363,69 +376,23 @@ void Copter::ModeGuided::run()
 
 // guided_takeoff_run - takeoff in guided mode
 //      called by guided_run at 100hz or more
-void Copter::ModeGuided::takeoff_run()
+void ModeGuided::takeoff_run()
 {
     auto_takeoff_run();
     if (wp_nav->reached_wp_destination()) {
+        // optionally retract landing gear
+        copter.landinggear.retract_after_takeoff();
+
+        // switch to position control mode but maintain current target
         const Vector3f target = wp_nav->get_wp_destination();
-        set_destination(target);
+        set_destination(target, false, 0, false, 0, false, wp_nav->origin_and_destination_are_terrain_alt());
     }
-}
-
-void Copter::Mode::auto_takeoff_run()
-{
-    // if not auto armed or motor interlock not enabled set throttle to zero and exit immediately
-    if (!motors->armed() || !ap.auto_armed || !motors->get_interlock()) {
-        // initialise wpnav targets
-        wp_nav->shift_wp_origin_to_current_pos();
-        zero_throttle_and_relax_ac();
-        // clear i term when we're taking off
-        set_throttle_takeoff();
-        return;
-    }
-
-    // process pilot's yaw input
-    float target_yaw_rate = 0;
-    if (!copter.failsafe.radio) {
-        // get pilot's desired yaw rate
-        target_yaw_rate = get_pilot_desired_yaw_rate(channel_yaw->get_control_in());
-    }
-
-#if FRAME_CONFIG == HELI_FRAME
-    // helicopters stay in landed state until rotor speed runup has finished
-    if (motors->rotor_runup_complete()) {
-        set_land_complete(false);
-    } else {
-        // initialise wpnav targets
-        wp_nav->shift_wp_origin_to_current_pos();
-    }
-#else
-    set_land_complete(false);
-#endif
-
-    // set motors to full range
-    motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
-
-    // run waypoint controller
-    copter.failsafe_terrain_set_status(wp_nav->update_wpnav());
-
-    // call z-axis position controller (wpnav should have already updated it's alt target)
-    copter.pos_control->update_z_controller();
-
-    // call attitude controller
-    auto_takeoff_attitude_run(target_yaw_rate);
 }
 
 // guided_pos_control_run - runs the guided position controller
 // called from guided_run
-void Copter::ModeGuided::pos_control_run()
+void ModeGuided::pos_control_run()
 {
-    // if not auto armed or motors not enabled set throttle to zero and exit immediately
-    if (!motors->armed() || !ap.auto_armed || !motors->get_interlock() || ap.land_complete) {
-        zero_throttle_and_relax_ac();
-        return;
-    }
-
     // process pilot's yaw input
     float target_yaw_rate = 0;
     if (!copter.failsafe.radio) {
@@ -436,8 +403,14 @@ void Copter::ModeGuided::pos_control_run()
         }
     }
 
+    // if not armed set throttle to zero and exit immediately
+    if (is_disarmed_or_landed()) {
+        make_safe_spool_down();
+        return;
+    }
+
     // set motors to full range
-    motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
+    motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
 
     // run waypoint controller
     copter.failsafe_terrain_set_status(wp_nav->update_wpnav());
@@ -460,16 +433,8 @@ void Copter::ModeGuided::pos_control_run()
 
 // guided_vel_control_run - runs the guided velocity controller
 // called from guided_run
-void Copter::ModeGuided::vel_control_run()
+void ModeGuided::vel_control_run()
 {
-    // if not auto armed or motors not enabled set throttle to zero and exit immediately
-    if (!motors->armed() || !ap.auto_armed || !motors->get_interlock() || ap.land_complete) {
-        // initialise velocity controller
-        pos_control->init_vel_controller_xyz();
-        zero_throttle_and_relax_ac();
-        return;
-    }
-
     // process pilot's yaw input
     float target_yaw_rate = 0;
     if (!copter.failsafe.radio) {
@@ -480,8 +445,14 @@ void Copter::ModeGuided::vel_control_run()
         }
     }
 
+    // if not armed set throttle to zero and exit immediately
+    if (is_disarmed_or_landed()) {
+        make_safe_spool_down();
+        return;
+    }
+
     // set motors to full range
-    motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
+    motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
 
     // set velocity to zero and stop rotating if no updates received for 3 seconds
     uint32_t tnow = millis();
@@ -514,17 +485,8 @@ void Copter::ModeGuided::vel_control_run()
 
 // guided_posvel_control_run - runs the guided spline controller
 // called from guided_run
-void Copter::ModeGuided::posvel_control_run()
+void ModeGuided::posvel_control_run()
 {
-    // if not auto armed or motors not enabled set throttle to zero and exit immediately
-    if (!motors->armed() || !ap.auto_armed || !motors->get_interlock() || ap.land_complete) {
-        // set target position and velocity to current position and velocity
-        pos_control->set_pos_target(inertial_nav.get_position());
-        pos_control->set_desired_velocity(Vector3f(0,0,0));
-        zero_throttle_and_relax_ac();
-        return;
-    }
-
     // process pilot's yaw input
     float target_yaw_rate = 0;
 
@@ -536,8 +498,14 @@ void Copter::ModeGuided::posvel_control_run()
         }
     }
 
+    // if not armed set throttle to zero and exit immediately
+    if (is_disarmed_or_landed()) {
+        make_safe_spool_down();
+        return;
+    }
+
     // set motors to full range
-    motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
+    motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
 
     // set velocity to zero and stop rotating if no updates received for 3 seconds
     uint32_t tnow = millis();
@@ -582,18 +550,8 @@ void Copter::ModeGuided::posvel_control_run()
 
 // guided_angle_control_run - runs the guided angle controller
 // called from guided_run
-void Copter::ModeGuided::angle_control_run()
+void ModeGuided::angle_control_run()
 {
-    // if not auto armed or motors not enabled set throttle to zero and exit immediately
-    if (!motors->armed() || !ap.auto_armed || !motors->get_interlock() || (ap.land_complete && guided_angle_state.climb_rate_cms <= 0.0f)) {
-#if FRAME_CONFIG == HELI_FRAME
-        attitude_control->set_yaw_target_to_current_heading();
-#endif
-        zero_throttle_and_relax_ac();
-        pos_control->relax_alt_hold_controllers(0.0f);
-        return;
-    }
-
     // constrain desired lean angles
     float roll_in = guided_angle_state.roll_cd;
     float pitch_in = guided_angle_state.pitch_cd;
@@ -610,7 +568,7 @@ void Copter::ModeGuided::angle_control_run()
     float yaw_rate_in = wrap_180_cd(guided_angle_state.yaw_rate_cds);
 
     // constrain climb rate
-    float climb_rate_cms = constrain_float(guided_angle_state.climb_rate_cms, -fabsf(wp_nav->get_speed_down()), wp_nav->get_speed_up());
+    float climb_rate_cms = constrain_float(guided_angle_state.climb_rate_cms, -fabsf(wp_nav->get_default_speed_down()), wp_nav->get_default_speed_up());
 
     // get avoidance adjusted climb rate
     climb_rate_cms = get_avoidance_adjusted_climbrate(climb_rate_cms);
@@ -624,8 +582,26 @@ void Copter::ModeGuided::angle_control_run()
         yaw_rate_in = 0.0f;
     }
 
+    // if not armed set throttle to zero and exit immediately
+    if (!motors->armed() || !copter.ap.auto_armed || (copter.ap.land_complete && (guided_angle_state.climb_rate_cms <= 0.0f))) {
+        make_safe_spool_down();
+        return;
+    }
+
+    // TODO: use get_alt_hold_state
+    // landed with positive desired climb rate, takeoff
+    if (copter.ap.land_complete && (guided_angle_state.climb_rate_cms > 0.0f)) {
+        zero_throttle_and_relax_ac();
+        motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
+        if (motors->get_spool_state() == AP_Motors::SpoolState::THROTTLE_UNLIMITED) {
+            set_land_complete(false);
+            set_throttle_takeoff();
+        }
+        return;
+    }
+
     // set motors to full range
-    motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
+    motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
 
     // call attitude controller
     if (guided_angle_state.use_yaw_rate) {
@@ -640,7 +616,7 @@ void Copter::ModeGuided::angle_control_run()
 }
 
 // helper function to update position controller's desired velocity while respecting acceleration limits
-void Copter::ModeGuided::set_desired_velocity_with_accel_and_fence_limits(const Vector3f& vel_des)
+void ModeGuided::set_desired_velocity_with_accel_and_fence_limits(const Vector3f& vel_des)
 {
     // get current desired velocity
     Vector3f curr_vel_des = pos_control->get_desired_velocity();
@@ -666,7 +642,7 @@ void Copter::ModeGuided::set_desired_velocity_with_accel_and_fence_limits(const 
     // limit the velocity to prevent fence violations
     copter.avoid.adjust_velocity(pos_control->get_pos_xy_p().kP(), pos_control->get_max_accel_xy(), curr_vel_des, G_Dt);
     // get avoidance adjusted climb rate
-    curr_vel_des.z = get_avoidance_adjusted_climbrate(curr_vel_des.z);    
+    curr_vel_des.z = get_avoidance_adjusted_climbrate(curr_vel_des.z);
 #endif
 
     // update position controller with new target
@@ -674,10 +650,10 @@ void Copter::ModeGuided::set_desired_velocity_with_accel_and_fence_limits(const 
 }
 
 // helper function to set yaw state and targets
-void Copter::ModeGuided::set_yaw_state(bool use_yaw, float yaw_cd, bool use_yaw_rate, float yaw_rate_cds, bool relative_angle)
+void ModeGuided::set_yaw_state(bool use_yaw, float yaw_cd, bool use_yaw_rate, float yaw_rate_cds, bool relative_angle)
 {
     if (use_yaw) {
-        auto_yaw.set_fixed_yaw(yaw_cd / 100.0f, 0.0f, 0, relative_angle);
+        auto_yaw.set_fixed_yaw(yaw_cd * 0.01f, 0.0f, 0, relative_angle);
     } else if (use_yaw_rate) {
         auto_yaw.set_rate(yaw_rate_cds);
     }
@@ -686,7 +662,7 @@ void Copter::ModeGuided::set_yaw_state(bool use_yaw, float yaw_cd, bool use_yaw_
 // Guided Limit code
 
 // guided_limit_clear - clear/turn off guided limits
-void Copter::ModeGuided::limit_clear()
+void ModeGuided::limit_clear()
 {
     guided_limit.timeout_ms = 0;
     guided_limit.alt_min_cm = 0.0f;
@@ -695,7 +671,7 @@ void Copter::ModeGuided::limit_clear()
 }
 
 // guided_limit_set - set guided timeout and movement limits
-void Copter::ModeGuided::limit_set(uint32_t timeout_ms, float alt_min_cm, float alt_max_cm, float horiz_max_cm)
+void ModeGuided::limit_set(uint32_t timeout_ms, float alt_min_cm, float alt_max_cm, float horiz_max_cm)
 {
     guided_limit.timeout_ms = timeout_ms;
     guided_limit.alt_min_cm = alt_min_cm;
@@ -705,7 +681,7 @@ void Copter::ModeGuided::limit_set(uint32_t timeout_ms, float alt_min_cm, float 
 
 // guided_limit_init_time_and_pos - initialise guided start time and position as reference for limit checking
 //  only called from AUTO mode's auto_nav_guided_start function
-void Copter::ModeGuided::limit_init_time_and_pos()
+void ModeGuided::limit_init_time_and_pos()
 {
     // initialise start time
     guided_limit.start_time = AP_HAL::millis();
@@ -716,7 +692,7 @@ void Copter::ModeGuided::limit_init_time_and_pos()
 
 // guided_limit_check - returns true if guided mode has breached a limit
 //  used when guided is invoked from the NAV_GUIDED_ENABLE mission command
-bool Copter::ModeGuided::limit_check()
+bool ModeGuided::limit_check()
 {
     // check if we have passed the timeout
     if ((guided_limit.timeout_ms > 0) && (millis() - guided_limit.start_time >= guided_limit.timeout_ms)) {
@@ -749,7 +725,7 @@ bool Copter::ModeGuided::limit_check()
 }
 
 
-uint32_t Copter::ModeGuided::wp_distance() const
+uint32_t ModeGuided::wp_distance() const
 {
     switch(mode()) {
     case Guided_WP:
@@ -763,7 +739,7 @@ uint32_t Copter::ModeGuided::wp_distance() const
     }
 }
 
-int32_t Copter::ModeGuided::wp_bearing() const
+int32_t ModeGuided::wp_bearing() const
 {
     switch(mode()) {
     case Guided_WP:
@@ -777,7 +753,7 @@ int32_t Copter::ModeGuided::wp_bearing() const
     }
 }
 
-float Copter::ModeGuided::crosstrack_error() const
+float ModeGuided::crosstrack_error() const
 {
     if (mode() == Guided_WP) {
         return wp_nav->crosstrack_error();
@@ -785,3 +761,5 @@ float Copter::ModeGuided::crosstrack_error() const
         return 0;
     }
 }
+
+#endif

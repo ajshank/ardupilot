@@ -4,6 +4,7 @@ namespace Empty {
     class AnalogIn;
     class AnalogSource;
     class DigitalSource;
+    class DSP;
     class GPIO;
     class I2CDevice;
     class I2CDeviceManager;
@@ -18,4 +19,5 @@ namespace Empty {
     class Storage;
     class UARTDriver;
     class Util;
+    class Flash;
 }

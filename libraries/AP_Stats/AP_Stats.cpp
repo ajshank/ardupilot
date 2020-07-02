@@ -32,8 +32,8 @@ const AP_Param::GroupInfo AP_Stats::var_info[] = {
     AP_GROUPINFO("_RUNTIME",    2, AP_Stats, params.runtime, 0),
 
     // @Param: _RESET
-    // @DisplayName: Reset time
-    // @Description: Seconds since January 1st 2016 (Unix epoch+1451606400) since reset (set to 0 to reset statistics)
+    // @DisplayName: Statistics Reset Time
+    // @Description: Seconds since January 1st 2016 (Unix epoch+1451606400) since statistics reset (set to 0 to reset statistics)
     // @Units: s
     // @ReadOnly: True
     // @User: Standard
@@ -76,6 +76,7 @@ void AP_Stats::flush()
 void AP_Stats::update_flighttime()
 {
     if (_flying_ms) {
+        WITH_SEMAPHORE(sem);
         const uint32_t now = AP_HAL::millis();
         const uint32_t delta = (now - _flying_ms)/1000;
         flttime += delta;
@@ -93,6 +94,7 @@ void AP_Stats::update_runtime()
 
 void AP_Stats::update()
 {
+    WITH_SEMAPHORE(sem);
     const uint32_t now_ms = AP_HAL::millis();
     if (now_ms -  last_flush_ms > flush_interval_ms) {
         update_flighttime();

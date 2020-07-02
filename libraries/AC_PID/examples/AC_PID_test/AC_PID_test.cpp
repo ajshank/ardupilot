@@ -9,7 +9,7 @@
 #include <RC_Channel/RC_Channel.h>
 
 // we need a boardconfig created so that the io processor is available
-#if HAL_WITH_IO_MCU || CONFIG_HAL_BOARD == HAL_BOARD_PX4 || CONFIG_HAL_BOARD == HAL_BOARD_VRBRAIN
+#if HAL_WITH_IO_MCU
 #include <AP_BoardConfig/AP_BoardConfig.h>
 #include <AP_IOMCU/AP_IOMCU.h>
 AP_BoardConfig BoardConfig;
@@ -27,7 +27,7 @@ class RC_Channel_PIDTest : public RC_Channel
 class RC_Channels_PIDTest : public RC_Channels
 {
 public:
-    RC_Channel *channel(uint8_t chan) {
+    RC_Channel *channel(uint8_t chan) override {
         return &obj_channels[chan];
     }
 
@@ -57,7 +57,7 @@ void setup()
 {
     hal.console->printf("ArduPilot AC_PID library test\n");
 
-#if HAL_WITH_IO_MCU || CONFIG_HAL_BOARD == HAL_BOARD_PX4 || CONFIG_HAL_BOARD == HAL_BOARD_VRBRAIN
+#if HAL_WITH_IO_MCU
     BoardConfig.init();
 #endif
 
@@ -70,14 +70,14 @@ void setup()
 void loop()
 {
     // setup (unfortunately must be done here as we cannot create a global AC_PID object)
-    AC_PID pid(TEST_P, TEST_I, TEST_D, TEST_IMAX * 100, TEST_FILTER, TEST_DT);
-    AC_HELI_PID heli_pid(TEST_P, TEST_I, TEST_D, TEST_IMAX * 100, TEST_FILTER, TEST_DT, TEST_INITIAL_FF);
+    AC_PID pid(TEST_P, TEST_I, TEST_D, 0.0f, TEST_IMAX * 100.0f, 0.0f, 0.0f, TEST_FILTER, TEST_DT);
+    AC_HELI_PID heli_pid(TEST_P, TEST_I, TEST_D, TEST_INITIAL_FF, TEST_IMAX * 100, 0.0f, 0.0f, TEST_FILTER, TEST_DT);
 
     // display PID gains
     hal.console->printf("P %f  I %f  D %f  imax %f\n", (double)pid.kP(), (double)pid.kI(), (double)pid.kD(), (double)pid.imax());
 
-    RC_Channel *ch = rc().channel(0);
-    if (ch == nullptr) {
+    RC_Channel *c = rc().channel(0);
+    if (c == nullptr) {
         while (true) {
             hal.console->printf("No channel 0?");
             hal.scheduler->delay(1000);
@@ -85,13 +85,13 @@ void loop()
     }
 
     // capture radio trim
-    const uint16_t radio_trim = ch->get_radio_in();
+    const uint16_t radio_trim = c->get_radio_in();
 
     while (true) {
         rc().read_input(); // poll the radio for new values
-        const uint16_t radio_in = ch->get_radio_in();
+        const uint16_t radio_in = c->get_radio_in();
         const int16_t error = radio_in - radio_trim;
-        pid.set_input_filter_all(error);
+        pid.update_error(error);
         const float control_P = pid.get_p();
         const float control_I = pid.get_i();
         const float control_D = pid.get_d();

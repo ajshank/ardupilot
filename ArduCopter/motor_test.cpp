@@ -25,6 +25,8 @@ void Copter::motor_test_output()
         return;
     }
 
+    EXPECT_DELAY_MS(2000);
+
     // check for test timeout
     uint32_t now = AP_HAL::millis();
     if ((now - motor_test_start_ms) >= motor_test_timeout_ms) {
@@ -39,6 +41,7 @@ void Copter::motor_test_output()
                 motor_test_start_ms = now;
                 if (!motors->armed()) {
                     motors->armed(true);
+                    hal.util->set_soft_armed(true);
                 }
             }
             return;
@@ -82,7 +85,7 @@ void Copter::motor_test_output()
 
         // sanity check throttle values
         if (pwm >= MOTOR_TEST_PWM_MIN && pwm <= MOTOR_TEST_PWM_MAX ) {
-            // turn on motor to specified pwm vlaue
+            // turn on motor to specified pwm value
             motors->output_test_seq(motor_test_seq, pwm);
         } else {
             motor_test_stop();
@@ -92,10 +95,8 @@ void Copter::motor_test_output()
 
 // mavlink_motor_test_check - perform checks before motor tests can begin
 //  return true if tests can continue, false if not
-bool Copter::mavlink_motor_test_check(mavlink_channel_t chan, bool check_rc)
+bool Copter::mavlink_motor_test_check(const GCS_MAVLINK &gcs_chan, bool check_rc)
 {
-    GCS_MAVLINK_Copter &gcs_chan = gcs().chan(chan-MAVLINK_COMM_0);
-
     // check board has initialised
     if (!ap.initialised) {
         gcs_chan.send_text(MAV_SEVERITY_CRITICAL,"Motor Test: Board initialising");
@@ -126,7 +127,7 @@ bool Copter::mavlink_motor_test_check(mavlink_channel_t chan, bool check_rc)
 
 // mavlink_motor_test_start - start motor test - spin a single motor at a specified pwm
 //  returns MAV_RESULT_ACCEPTED on success, MAV_RESULT_FAILED on failure
-MAV_RESULT Copter::mavlink_motor_test_start(mavlink_channel_t chan, uint8_t motor_seq, uint8_t throttle_type, uint16_t throttle_value,
+MAV_RESULT Copter::mavlink_motor_test_start(const GCS_MAVLINK &gcs_chan, uint8_t motor_seq, uint8_t throttle_type, uint16_t throttle_value,
                                          float timeout_sec, uint8_t motor_count)
 {
     if (motor_count == 0) {
@@ -140,17 +141,19 @@ MAV_RESULT Copter::mavlink_motor_test_start(mavlink_channel_t chan, uint8_t moto
            The RC calibrated check can be skipped if direct pwm is
            supplied
         */
-        if (!mavlink_motor_test_check(chan, throttle_type != 1)) {
+        if (!mavlink_motor_test_check(gcs_chan, throttle_type != 1)) {
             return MAV_RESULT_FAILED;
         } else {
             // start test
             ap.motor_test = true;
 
+            EXPECT_DELAY_MS(3000);
             // enable and arm motors
             if (!motors->armed()) {
                 init_rc_out();
                 enable_motor_output();
                 motors->armed(true);
+                hal.util->set_soft_armed(true);
             }
 
             // disable throttle and gps failsafe
@@ -196,6 +199,7 @@ void Copter::motor_test_stop()
 
     // disarm motors
     motors->armed(false);
+    hal.util->set_soft_armed(false);
 
     // reset timeout
     motor_test_start_ms = 0;

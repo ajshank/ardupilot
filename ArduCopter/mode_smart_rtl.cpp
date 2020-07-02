@@ -9,9 +9,9 @@
  * Once the copter is close to home, it will run a standard land controller.
  */
 
-bool Copter::ModeSmartRTL::init(bool ignore_checks)
+bool ModeSmartRTL::init(bool ignore_checks)
 {
-    if ((copter.position_ok() || ignore_checks) && g2.smart_rtl.is_active()) {
+    if (g2.smart_rtl.is_active()) {
         // initialise waypoint and spline controller
         wp_nav->wp_and_spline_init();
 
@@ -33,12 +33,12 @@ bool Copter::ModeSmartRTL::init(bool ignore_checks)
 }
 
 // perform cleanup required when leaving smart_rtl
-void Copter::ModeSmartRTL::exit()
+void ModeSmartRTL::exit()
 {
     g2.smart_rtl.cancel_request_for_thorough_cleanup();
 }
 
-void Copter::ModeSmartRTL::run()
+void ModeSmartRTL::run()
 {
     switch (smart_rtl_state) {
         case SmartRTL_WaitForPathCleanup:
@@ -59,10 +59,10 @@ void Copter::ModeSmartRTL::run()
     }
 }
 
-void Copter::ModeSmartRTL::wait_cleanup_run()
+void ModeSmartRTL::wait_cleanup_run()
 {
     // hover at current target position
-    motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
+    motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
     wp_nav->update_wpnav();
     pos_control->update_z_controller();
     attitude_control->input_euler_angle_roll_pitch_yaw(wp_nav->get_roll(), wp_nav->get_pitch(), auto_yaw.yaw(),true);
@@ -73,7 +73,7 @@ void Copter::ModeSmartRTL::wait_cleanup_run()
     }
 }
 
-void Copter::ModeSmartRTL::path_follow_run()
+void ModeSmartRTL::path_follow_run()
 {
     float target_yaw_rate = 0.0f;
     if (!copter.failsafe.radio) {
@@ -105,7 +105,7 @@ void Copter::ModeSmartRTL::path_follow_run()
     }
 
     // update controllers
-    motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
+    motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
     wp_nav->update_wpnav();
     pos_control->update_z_controller();
 
@@ -119,7 +119,7 @@ void Copter::ModeSmartRTL::path_follow_run()
     }
 }
 
-void Copter::ModeSmartRTL::pre_land_position_run()
+void ModeSmartRTL::pre_land_position_run()
 {
     // if we are close to 2m above start point, we are ready to land.
     if (wp_nav->reached_wp_destination()) {
@@ -135,26 +135,43 @@ void Copter::ModeSmartRTL::pre_land_position_run()
     }
 
     // update controllers
-    motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
+    motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
     wp_nav->update_wpnav();
     pos_control->update_z_controller();
     attitude_control->input_euler_angle_roll_pitch_yaw(wp_nav->get_roll(), wp_nav->get_pitch(), auto_yaw.yaw(), true);
 }
 
 // save current position for use by the smart_rtl flight mode
-void Copter::ModeSmartRTL::save_position()
+void ModeSmartRTL::save_position()
 {
-    const bool should_save_position = motors->armed() && (copter.control_mode != SMART_RTL);
+    const bool should_save_position = motors->armed() && (copter.control_mode != Mode::Number::SMART_RTL);
 
     copter.g2.smart_rtl.update(copter.position_ok(), should_save_position);
 }
 
-uint32_t Copter::ModeSmartRTL::wp_distance() const
+bool ModeSmartRTL::get_wp(Location& destination)
+{
+    // provide target in states which use wp_nav
+    switch (smart_rtl_state) {
+    case SmartRTL_WaitForPathCleanup:
+    case SmartRTL_PathFollow:
+    case SmartRTL_PreLandPosition:
+    case SmartRTL_Descend:
+        return wp_nav->get_wp_destination(destination);
+    case SmartRTL_Land:
+        return false;
+    }
+
+    // we should never get here but just in case
+    return false;
+}
+
+uint32_t ModeSmartRTL::wp_distance() const
 {
     return wp_nav->get_wp_distance_to_destination();
 }
 
-int32_t Copter::ModeSmartRTL::wp_bearing() const
+int32_t ModeSmartRTL::wp_bearing() const
 {
     return wp_nav->get_wp_bearing_to_destination();
 }

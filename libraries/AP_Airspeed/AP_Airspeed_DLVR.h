@@ -23,13 +23,12 @@
 #include <utility>
 
 #include "AP_Airspeed_Backend.h"
-#include <AP_HAL/I2CDevice.h>
 
 class AP_Airspeed_DLVR : public AP_Airspeed_Backend
 {
 public:
 
-    AP_Airspeed_DLVR(AP_Airspeed &frontend, uint8_t _instance);
+    AP_Airspeed_DLVR(AP_Airspeed &frontend, uint8_t _instance, const float _range_inH2O);
     ~AP_Airspeed_DLVR(void) {}
     
     // probe and initialise the sensor
@@ -52,6 +51,7 @@ private:
     uint32_t press_count;
     
     uint32_t last_sample_time_ms;
+    const float range_inH2O;
 
     AP_HAL::OwnPtr<AP_HAL::I2CDevice> dev;
 };

@@ -47,8 +47,13 @@ public:
     // output a thrust to all motors that match a given motor
     // mask. This is used to control tiltrotor motors in forward
     // flight. Thrust is in the range 0 to 1
-    void                output_motor_mask(float thrust, uint8_t mask) override;
-    
+    // rudder_dt applys diffential thrust for yaw in the range 0 to 1
+    void                output_motor_mask(float thrust, uint8_t mask, float rudder_dt) override;
+
+    // return the roll factor of any motor, this is used for tilt rotors and tail sitters
+    // using copter motors for forward flight
+    float               get_roll_factor(uint8_t i) override;
+
 protected:
     // output - sends commands to the motors
     void                output_armed_stabilizing() override;
@@ -56,9 +61,6 @@ protected:
     // call vehicle supplied thrust compensation if set
     void                thrust_compensation(void) override;
     
-    // calc_yaw_radio_output - calculate final radio output for yaw channel
-    int16_t             calc_yaw_radio_output(float yaw_input, float yaw_input_max);        // calculate radio output for yaw servo, typically in range of 1100-1900
-
     // parameters
 
     SRV_Channel     *_yaw_servo; // yaw output channel
@@ -66,4 +68,7 @@ protected:
     float           _thrust_right;
     float           _thrust_rear;
     float           _thrust_left;
+
+    // reverse pitch
+    bool _pitch_reversed;
 };

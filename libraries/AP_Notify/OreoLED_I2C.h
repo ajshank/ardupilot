@@ -38,7 +38,7 @@ public:
     void update() override;
 
     // handle a LED_CONTROL message, by default device ignore message
-    void handle_led_control(mavlink_message_t *msg) override;
+    void handle_led_control(const mavlink_message_t &msg) override;
 
 private:
     enum oreoled_pattern {
@@ -88,7 +88,7 @@ private:
         OREOLED_PARAM_ENUM_COUNT
     };
 
-    // update_timer - called by scheduler and updates PX4 driver with commands
+    // update_timer - called by scheduler and updates driver with commands
     void update_timer(void);
 
     // set_rgb - set color as a combination of red, green and blue values for one or all LEDs, pattern defaults to solid color
@@ -113,6 +113,7 @@ private:
     bool mode_firmware_update(void);
     bool mode_init(void);
     bool mode_failsafe_radio(void);
+    bool mode_failsafe_gcs(void);
     bool set_standard_colors(void);
     bool mode_failsafe_batt(void);
     bool mode_auto_flight(void);
@@ -179,7 +180,7 @@ private:
 
     // private members
     uint8_t _bus;
-    HAL_Semaphore_Recursive _sem;
+    HAL_Semaphore _sem;
     AP_HAL::OwnPtr<AP_HAL::I2CDevice> _dev;
     bool    _send_required;                         // true when we need to send an update to at least one led
     oreo_state _state_desired[OREOLED_NUM_LEDS];    // desired state

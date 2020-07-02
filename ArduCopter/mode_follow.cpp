@@ -14,23 +14,32 @@
  */
 
 // initialise follow mode
-bool Copter::ModeFollow::init(const bool ignore_checks)
+bool ModeFollow::init(const bool ignore_checks)
 {
     if (!g2.follow.enabled()) {
         gcs().send_text(MAV_SEVERITY_WARNING, "Set FOLL_ENABLE = 1");
         return false;
     }
     // re-use guided mode
-    return Copter::ModeGuided::init(ignore_checks);
+    return ModeGuided::init(ignore_checks);
 }
 
-void Copter::ModeFollow::run()
+// perform cleanup required when leaving follow mode
+void ModeFollow::exit()
 {
-    // if not auto armed or motor interlock not enabled set throttle to zero and exit immediately
-    if (!motors->armed() || !ap.auto_armed || !motors->get_interlock()) {
-        zero_throttle_and_relax_ac();
+    g2.follow.clear_offsets_if_required();
+}
+
+void ModeFollow::run()
+{
+    // if not armed set throttle to zero and exit immediately
+    if (is_disarmed_or_landed()) {
+        make_safe_spool_down();
         return;
     }
+
+    // set motors to full range
+    motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
 
     // re-use guided mode's velocity controller
     // Note: this is safe from interference from GCSs and companion computer's whose guided mode
@@ -113,7 +122,7 @@ void Copter::ModeFollow::run()
 
             case AP_Follow::YAW_BEHAVE_SAME_AS_LEAD_VEHICLE: {
                 float target_hdg = 0.0f;
-                if (g2.follow.get_target_heading(target_hdg)) {
+                if (g2.follow.get_target_heading_deg(target_hdg)) {
                     yaw_cd = target_hdg * 100.0f;
                     use_yaw = true;
                 }
@@ -145,19 +154,31 @@ void Copter::ModeFollow::run()
         last_log_ms = now;
     }
     // re-use guided mode's velocity controller (takes NEU)
-    Copter::ModeGuided::set_velocity(desired_velocity_neu_cms, use_yaw, yaw_cd, false, 0.0f, false, log_request);
+    ModeGuided::set_velocity(desired_velocity_neu_cms, use_yaw, yaw_cd, false, 0.0f, false, log_request);
 
-    Copter::ModeGuided::run();
+    ModeGuided::run();
 }
 
-uint32_t Copter::ModeFollow::wp_distance() const
+uint32_t ModeFollow::wp_distance() const
 {
     return g2.follow.get_distance_to_target() * 100;
 }
 
-int32_t Copter::ModeFollow::wp_bearing() const
+int32_t ModeFollow::wp_bearing() const
 {
     return g2.follow.get_bearing_to_target() * 100;
+}
+
+/*
+  get target position for mavlink reporting
+ */
+bool ModeFollow::get_wp(Location &loc)
+{
+    float dist = g2.follow.get_distance_to_target();
+    float bearing = g2.follow.get_bearing_to_target();
+    loc = copter.current_loc;
+    loc.offset_bearing(bearing, dist);
+    return true;
 }
 
 #endif // MODE_FOLLOW_ENABLED == ENABLED

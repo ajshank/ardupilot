@@ -55,21 +55,10 @@ void AP_Baro_UAVCAN::subscribe_msgs(AP_UAVCAN* ap_uavcan)
     }
 }
 
-bool AP_Baro_UAVCAN::take_registry()
-{
-    return _sem_registry.take(HAL_SEMAPHORE_BLOCK_FOREVER);
-}
-
-void AP_Baro_UAVCAN::give_registry()
-{
-    _sem_registry.give();
-}
-
 AP_Baro_Backend* AP_Baro_UAVCAN::probe(AP_Baro &baro)
 {
-    if (!take_registry()) {
-        return nullptr;
-    }
+    WITH_SEMAPHORE(_sem_registry);
+
     AP_Baro_UAVCAN* backend = nullptr;
     for (uint8_t i = 0; i < BARO_MAX_DRIVERS; i++) {
         if (_detected_modules[i].driver == nullptr && _detected_modules[i].ap_uavcan != nullptr) {
@@ -82,6 +71,8 @@ AP_Baro_Backend* AP_Baro_UAVCAN::probe(AP_Baro &baro)
                                   _detected_modules[i].ap_uavcan->get_driver_index());
             } else {
                 _detected_modules[i].driver = backend;
+                backend->_pressure = 0;
+                backend->_pressure_count = 0;
                 backend->_ap_uavcan = _detected_modules[i].ap_uavcan;
                 backend->_node_id = _detected_modules[i].node_id;
                 backend->register_sensor();
@@ -94,7 +85,6 @@ AP_Baro_Backend* AP_Baro_UAVCAN::probe(AP_Baro &baro)
             break;
         }
     }
-    give_registry();
     return backend;
 }
 
@@ -135,45 +125,64 @@ AP_Baro_UAVCAN* AP_Baro_UAVCAN::get_uavcan_backend(AP_UAVCAN* ap_uavcan, uint8_t
     return nullptr;
 }
 
+
+void AP_Baro_UAVCAN::_update_and_wrap_accumulator(float *accum, float val, uint8_t *count, const uint8_t max_count)
+{
+    *accum += val;
+    *count += 1;
+    if (*count == max_count) {
+        *count = max_count / 2;
+        *accum = *accum / 2;
+    }
+}
+
 void AP_Baro_UAVCAN::handle_pressure(AP_UAVCAN* ap_uavcan, uint8_t node_id, const PressureCb &cb)
 {
-    if (take_registry()) {
-        AP_Baro_UAVCAN* driver = get_uavcan_backend(ap_uavcan, node_id, true);
+    AP_Baro_UAVCAN* driver;
+    {
+        WITH_SEMAPHORE(_sem_registry);
+        driver = get_uavcan_backend(ap_uavcan, node_id, true);
         if (driver == nullptr) {
-            give_registry();
             return;
         }
-        {
-            WITH_SEMAPHORE(driver->_sem_baro);
-            driver->_pressure = cb.msg->static_pressure;
-            driver->new_pressure = true;
-        }
-        give_registry();
+    }
+    {
+        WITH_SEMAPHORE(driver->_sem_baro);
+        _update_and_wrap_accumulator(&driver->_pressure, cb.msg->static_pressure, &driver->_pressure_count, 32);
+        driver->new_pressure = true;
     }
 }
 
 void AP_Baro_UAVCAN::handle_temperature(AP_UAVCAN* ap_uavcan, uint8_t node_id, const TemperatureCb &cb)
 {
-    if (take_registry()) {
-        AP_Baro_UAVCAN* driver = get_uavcan_backend(ap_uavcan, node_id, false);
+    AP_Baro_UAVCAN* driver;
+    {
+        WITH_SEMAPHORE(_sem_registry);
+        driver = get_uavcan_backend(ap_uavcan, node_id, false);
         if (driver == nullptr) {
-            give_registry();
             return;
         }
-        {
-            WITH_SEMAPHORE(driver->_sem_baro);
-            driver->_temperature = cb.msg->static_temperature - C_TO_KELVIN;
-        }
-        give_registry();
+    }
+    {
+        WITH_SEMAPHORE(driver->_sem_baro);
+        driver->_temperature = cb.msg->static_temperature - C_TO_KELVIN;
     }
 }
 
 // Read the sensor
 void AP_Baro_UAVCAN::update(void)
 {
+    float pressure = 0;
+
     WITH_SEMAPHORE(_sem_baro);
     if (new_pressure) {
-        _copy_to_frontend(_instance, _pressure, _temperature);
+        if (_pressure_count != 0) {
+            pressure = _pressure / _pressure_count;
+            _pressure_count = 0;
+            _pressure = 0;
+        }
+        _copy_to_frontend(_instance, pressure, _temperature);
+
 
         _frontend.set_external_temperature(_temperature);
         new_pressure = false;

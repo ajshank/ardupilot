@@ -18,9 +18,9 @@
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Param/AP_Param.h>
 #include <AP_Math/AP_Math.h>
-#include <AP_AHRS/AP_AHRS.h>
 #include <GCS_MAVLink/GCS.h>
 #include <AC_PID/AC_P.h>
+#include <AP_RTC/JitterCorrection.h>
 
 class AP_Follow
 {
@@ -43,6 +43,9 @@ public:
 
     // set which target to follow
     void set_target_sysid(uint8_t sysid) { _sysid = sysid; }
+
+    // restore offsets to zero if necessary, should be called when vehicle exits follow mode
+    void clear_offsets_if_required();
 
     //
     // position tracking related methods
@@ -68,7 +71,7 @@ public:
     YawBehave get_yaw_behave() const { return (YawBehave)_yaw_behave.get(); }
 
     // get target's heading in degrees (0 = north, 90 = east)
-    bool get_target_heading(float &heading) const;
+    bool get_target_heading_deg(float &heading) const;
 
     // parse mavlink messages which may hold target's position, velocity and attitude
     void handle_msg(const mavlink_message_t &msg);
@@ -109,7 +112,7 @@ private:
     AP_Float    _dist_max;          // maximum distance to target.  targets further than this will be ignored
     AP_Int8     _offset_type;       // offset frame type (0:North-East-Down, 1:RelativeToLeadVehicleHeading)
     AP_Vector3f _offset;            // offset from lead vehicle in meters
-    AP_Int8     _yaw_behave;        // following vehicle's yaw/heading behaviour
+    AP_Int8     _yaw_behave;        // following vehicle's yaw/heading behaviour (see YAW_BEHAVE enum)
     AP_Int8     _alt_type;          // altitude source for follow mode
     AC_P        _p_pos;             // position error P controller
 
@@ -122,6 +125,10 @@ private:
     uint32_t _last_heading_update_ms;   // system time of last heading update
     float _target_heading;          // heading in degrees
     bool _automatic_sysid;          // did we lock onto a sysid automatically?
-    float   _dist_to_target;        // latest distance to target in meters (for reporting purposes)
-    float   _bearing_to_target;     // latest bearing to target in degrees (for reporting purposes)
+    float _dist_to_target;          // latest distance to target in meters (for reporting purposes)
+    float _bearing_to_target;       // latest bearing to target in degrees (for reporting purposes)
+    bool _offsets_were_zero;        // true if offsets were originally zero and then initialised to the offset from lead vehicle
+
+    // setup jitter correction with max transport lag of 3s
+    JitterCorrection _jitter{3000};
 };

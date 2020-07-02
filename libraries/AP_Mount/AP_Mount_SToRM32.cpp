@@ -1,6 +1,7 @@
 #include "AP_Mount_SToRM32.h"
 #include <AP_HAL/AP_HAL.h>
-#include <GCS_MAVLink/GCS_MAVLink.h>
+#include <GCS_MAVLink/GCS.h>
+#include <AP_GPS/AP_GPS.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -46,6 +47,7 @@ void AP_Mount_SToRM32::update()
         // point to the angles given by a mavlink message
         case MAV_MOUNT_MODE_MAVLINK_TARGETING:
             // do nothing because earth-frame angle targets (i.e. _angle_ef_target_rad) should have already been set by a MOUNT_CONTROL message from GCS
+            resend_now = true;
             break;
 
         // RC radio manual angle control, but with stabilization from the AHRS
@@ -57,8 +59,13 @@ void AP_Mount_SToRM32::update()
 
         // point mount to a GPS point given by the mission planner
         case MAV_MOUNT_MODE_GPS_POINT:
-            if(AP::gps().status() >= AP_GPS::GPS_OK_FIX_2D) {
-                calc_angle_to_location(_state._roi_target, _angle_ef_target_rad, true, true);
+            if (calc_angle_to_roi_target(_angle_ef_target_rad, true, true)) {
+                resend_now = true;
+            }
+            break;
+
+        case MAV_MOUNT_MODE_SYSID_TARGET:
+            if (calc_angle_to_sysid_target(_angle_ef_target_rad, true, true)) {
                 resend_now = true;
             }
             break;

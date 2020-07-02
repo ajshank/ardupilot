@@ -11,7 +11,7 @@
  *
  * You should have received a copy of the GNU General Public License along
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Code by Andrew Tridgell and Siddharth Bharat Purohit
  */
 #include <AP_HAL/AP_HAL.h>
@@ -21,8 +21,10 @@
 #include <ch.h>
 #include "RCOutput.h"
 #include "hwdef/common/stm32_util.h"
+#include "hwdef/common/watchdog.h"
 #include "hwdef/common/flash.h"
 #include <AP_ROMFS/AP_ROMFS.h>
+#include "sdcard.h"
 
 #if HAL_WITH_IO_MCU
 #include <AP_BoardConfig/AP_BoardConfig.h>
@@ -33,7 +35,6 @@ extern AP_IOMCU iomcu;
 extern const AP_HAL::HAL& hal;
 
 using namespace ChibiOS;
-
 #if CH_CFG_USE_HEAP == TRUE
 
 /**
@@ -54,7 +55,7 @@ void* Util::malloc_type(size_t size, AP_HAL::Util::Memory_Type mem_type)
     if (mem_type == AP_HAL::Util::MEM_DMA_SAFE) {
         return malloc_dma(size);
     } else if (mem_type == AP_HAL::Util::MEM_FAST) {
-        return try_alloc_from_ccm_ram(size);
+        return malloc_fastmem(size);
     } else {
         return calloc(1, size);
     }
@@ -68,15 +69,65 @@ void Util::free_type(void *ptr, size_t size, AP_HAL::Util::Memory_Type mem_type)
 }
 
 
-void* Util::try_alloc_from_ccm_ram(size_t size)
+#ifdef ENABLE_HEAP
+
+void *Util::allocate_heap_memory(size_t size)
 {
-    void *ret = malloc_ccm(size);
-    if (ret == nullptr) {
-        //we failed to allocate from CCM so we are going to try common SRAM
-        ret = calloc(1, size);
+    void *buf = malloc(size);
+    if (buf == nullptr) {
+        return nullptr;
     }
-    return ret;
+
+    memory_heap_t *heap = (memory_heap_t *)malloc(sizeof(memory_heap_t));
+    if (heap != nullptr) {
+        chHeapObjectInit(heap, buf, size);
+    }
+
+    return heap;
 }
+
+/*
+  realloc implementation thanks to wolfssl, used by AP_Scripting
+ */
+void *Util::std_realloc(void *addr, size_t size)
+{
+    if (size == 0) {
+       free(addr);
+       return nullptr;
+    }
+    if (addr == nullptr) {
+        return malloc(size);
+    }
+    void *new_mem = malloc(size);
+    if (new_mem != nullptr) {
+        memcpy(new_mem, addr, chHeapGetSize(addr) > size ? size : chHeapGetSize(addr));
+        free(addr);
+    }
+    return new_mem;
+}
+
+void *Util::heap_realloc(void *heap, void *ptr, size_t new_size)
+{
+    if (heap == nullptr) {
+        return nullptr;
+    }
+    if (new_size == 0) {
+        if (ptr != nullptr) {
+            chHeapFree(ptr);
+        }
+        return nullptr;
+    }
+    if (ptr == nullptr) {
+        return chHeapAlloc((memory_heap_t *)heap, new_size);
+    }
+    void *new_mem = chHeapAlloc((memory_heap_t *)heap, new_size);
+    if (new_mem != nullptr) {
+        memcpy(new_mem, ptr, chHeapGetSize(ptr) > new_size ? new_size : chHeapGetSize(ptr));
+        chHeapFree(ptr);
+    }
+    return new_mem;
+}
+#endif // ENABLE_HEAP
 
 #endif // CH_CFG_USE_HEAP
 
@@ -89,56 +140,6 @@ Util::safety_state Util::safety_switch_state(void)
     return ((RCOutput *)hal.rcout)->_safety_switch_state();
 #else
     return SAFETY_NONE;
-#endif
-}
-
-void Util::set_imu_temp(float current)
-{
-#if HAL_WITH_IO_MCU && HAL_HAVE_IMU_HEATER
-    if (!heater.target || *heater.target == -1 || !AP_BoardConfig::io_enabled()) {
-        return;
-    }
-
-    // average over temperatures to remove noise
-    heater.count++;
-    heater.sum += current;
-    
-    // update once a second
-    uint32_t now = AP_HAL::millis();
-    if (now - heater.last_update_ms < 1000) {
-        return;
-    }
-    heater.last_update_ms = now;
-
-    current = heater.sum / heater.count;
-    heater.sum = 0;
-    heater.count = 0;
-
-    // experimentally tweaked for Pixhawk2
-    const float kI = 0.3f;
-    const float kP = 200.0f;
-    float target = (float)(*heater.target);
-
-    // limit to 65 degrees to prevent damage
-    target = constrain_float(target, 0, 65);
-    
-    float err = target - current;
-
-    heater.integrator += kI * err;
-    heater.integrator = constrain_float(heater.integrator, 0, 70);
-
-    float output = constrain_float(kP * err + heater.integrator, 0, 100);
-    
-    // hal.console->printf("integrator %.1f out=%.1f temp=%.2f err=%.2f\n", heater.integrator, output, current, err);
-
-    iomcu.set_heater_duty_cycle(output);
-#endif // HAL_WITH_IO_MCU && HAL_HAVE_IMU_HEATER
-}
-
-void Util::set_imu_target_temp(int8_t *target)
-{
-#if HAL_WITH_IO_MCU && HAL_HAVE_IMU_HEATER
-    heater.target = target;
 #endif
 }
 
@@ -182,55 +183,81 @@ uint64_t Util::get_hw_rtc() const
     return stm32_get_utc_usec();
 }
 
-#ifndef HAL_NO_FLASH_SUPPORT
+#if !defined(HAL_NO_FLASH_SUPPORT) && !defined(HAL_NO_ROMFS_SUPPORT)
 
-bool Util::flash_bootloader()
+#if defined(HAL_NO_GCS) || defined(HAL_BOOTLOADER_BUILD)
+#define Debug(fmt, args ...)  do { hal.console->printf(fmt, ## args); } while (0)
+#else
+#include <GCS_MAVLink/GCS.h>
+#define Debug(fmt, args ...)  do { gcs().send_text(MAV_SEVERITY_INFO, fmt, ## args); } while (0)
+#endif
+
+Util::FlashBootloader Util::flash_bootloader()
 {
     uint32_t fw_size;
     const char *fw_name = "bootloader.bin";
 
-    uint8_t *fw = AP_ROMFS::find_decompress(fw_name, fw_size);
+    EXPECT_DELAY_MS(11000);
+
+    const uint8_t *fw = AP_ROMFS::find_decompress(fw_name, fw_size);
     if (!fw) {
-        hal.console->printf("failed to find %s\n", fw_name);
-        return false;
+        Debug("failed to find %s\n", fw_name);
+        return FlashBootloader::NOT_AVAILABLE;
     }
+    // make sure size is multiple of 32
+    fw_size = (fw_size + 31U) & ~31U;
 
-    const uint32_t addr = stm32_flash_getpageaddr(0);
+    const uint32_t addr = hal.flash->getpageaddr(0);
     if (!memcmp(fw, (const void*)addr, fw_size)) {
-        hal.console->printf("Bootloader up-to-date\n");
-        free(fw);
-        return true;
+        Debug("Bootloader up-to-date\n");
+        AP_ROMFS::free(fw);
+        return FlashBootloader::NO_CHANGE;
     }
 
-    hal.console->printf("Erasing\n");
-    if (!stm32_flash_erasepage(0)) {
-        hal.console->printf("Erase failed\n");
-        free(fw);
-        return false;
+    Debug("Erasing\n");
+    uint32_t erased_size = 0;
+    uint8_t erase_page = 0;
+    while (erased_size < fw_size) {
+        uint32_t page_size = hal.flash->getpagesize(erase_page);
+        if (page_size == 0) {
+            AP_ROMFS::free(fw);
+            return FlashBootloader::FAIL;
+        }
+        hal.scheduler->expect_delay_ms(1000);
+        if (!hal.flash->erasepage(erase_page)) {
+            Debug("Erase %u failed\n", erase_page);
+            AP_ROMFS::free(fw);
+            return FlashBootloader::FAIL;
+        }
+        erased_size += page_size;
+        erase_page++;
     }
-    hal.console->printf("Flashing %s @%08x\n", fw_name, (unsigned int)addr);
+
+    Debug("Flashing %s @%08x\n", fw_name, (unsigned int)addr);
     const uint8_t max_attempts = 10;
+    hal.flash->keep_unlocked(true);
     for (uint8_t i=0; i<max_attempts; i++) {
-        void *context = hal.scheduler->disable_interrupts_save();
-        const int32_t written = stm32_flash_write(addr, fw, fw_size);
-        hal.scheduler->restore_interrupts(context);
-        if (written == -1 || written < fw_size) {
-            hal.console->printf("Flash failed! (attempt=%u/%u)\n",
+        hal.scheduler->expect_delay_ms(1000);
+        bool ok = hal.flash->write(addr, fw, fw_size);
+        if (!ok) {
+            Debug("Flash failed! (attempt=%u/%u)\n",
                                 i+1,
                                 max_attempts);
-            hal.scheduler->delay(1000);
+            hal.scheduler->delay(100);
             continue;
         }
-        hal.console->printf("Flash OK\n");
-        free(fw);
-        return true;
+        Debug("Flash OK\n");
+        hal.flash->keep_unlocked(false);
+        AP_ROMFS::free(fw);
+        return FlashBootloader::OK;
     }
 
-    hal.console->printf("Flash failed after %u attempts\n", max_attempts);
-    free(fw);
-    return false;
+    hal.flash->keep_unlocked(false);
+    Debug("Flash failed after %u attempts\n", max_attempts);
+    AP_ROMFS::free(fw);
+    return FlashBootloader::FAIL;
 }
-#endif //#ifndef HAL_NO_FLASH_SUPPORT
+#endif // !HAL_NO_FLASH_SUPPORT && !HAL_NO_ROMFS_SUPPORT
 
 /*
   display system identifer - board type and serial number
@@ -239,16 +266,16 @@ bool Util::get_system_id(char buf[40])
 {
     uint8_t serialid[12];
     char board_name[14];
-    
+
     memcpy(serialid, (const void *)UDID_START, 12);
     strncpy(board_name, CHIBIOS_SHORT_BOARD_NAME, 13);
     board_name[13] = 0;
-    
+
     // this format is chosen to match the format used by HAL_PX4
     snprintf(buf, 40, "%s %02X%02X%02X%02X %02X%02X%02X%02X %02X%02X%02X%02X",
              board_name,
-             (unsigned)serialid[3], (unsigned)serialid[2], (unsigned)serialid[1], (unsigned)serialid[0], 
-             (unsigned)serialid[7], (unsigned)serialid[6], (unsigned)serialid[5], (unsigned)serialid[4], 
+             (unsigned)serialid[3], (unsigned)serialid[2], (unsigned)serialid[1], (unsigned)serialid[0],
+             (unsigned)serialid[7], (unsigned)serialid[6], (unsigned)serialid[5], (unsigned)serialid[4],
              (unsigned)serialid[11], (unsigned)serialid[10], (unsigned)serialid[9],(unsigned)serialid[8]);
     buf[39] = 0;
     return true;
@@ -260,3 +287,61 @@ bool Util::get_system_id_unformatted(uint8_t buf[], uint8_t &len)
     memcpy(buf, (const void *)UDID_START, len);
     return true;
 }
+
+#ifdef USE_POSIX
+/*
+  initialise filesystem
+ */
+bool Util::fs_init(void)
+{
+    return sdcard_retry();
+}
+#endif
+
+// return true if the reason for the reboot was a watchdog reset
+bool Util::was_watchdog_reset() const
+{
+    return stm32_was_watchdog_reset();
+}
+
+#if CH_DBG_ENABLE_STACK_CHECK == TRUE
+/*
+  display stack usage as text buffer for @SYS/threads.txt
+ */
+size_t Util::thread_info(char *buf, size_t bufsize)
+{
+  thread_t *tp;
+  size_t total = 0;
+
+  // a header to allow for machine parsers to determine format
+  int n = snprintf(buf, bufsize, "ThreadsV1\n");
+  if (n <= 0) {
+      return 0;
+  }
+  buf += n;
+  bufsize -= n;
+  total += n;
+
+  tp = chRegFirstThread();
+
+  do {
+      uint32_t stklimit = (uint32_t)tp->wabase;
+      uint8_t *p = (uint8_t *)tp->wabase;
+      while (*p == CH_DBG_STACK_FILL_VALUE) {
+          p++;
+      }
+      uint32_t stack_left = ((uint32_t)p) - stklimit;
+      n = snprintf(buf, bufsize, "%-13.13s PRI=%3u STACK_LEFT=%u\n", tp->name, unsigned(tp->prio), unsigned(stack_left));
+      if (n <= 0) {
+          break;
+      }
+      buf += n;
+      bufsize -= n;
+      total += n;
+      tp = chRegNextThread(tp);
+  } while (tp != NULL);
+
+  return total;
+}
+#endif // CH_DBG_ENABLE_STACK_CHECK == TRUE
+

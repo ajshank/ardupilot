@@ -25,7 +25,7 @@ COMMON_VEHICLE_DEPENDENT_LIBRARIES = [
     'AP_Baro',
     'AP_BattMonitor',
     'AP_BoardConfig',
-    'AP_Buffer',
+    'AP_Camera',
     'AP_Common',
     'AP_Compass',
     'AP_Declination',
@@ -35,6 +35,7 @@ COMMON_VEHICLE_DEPENDENT_LIBRARIES = [
     'AP_InertialSensor',
     'AP_Math',
     'AP_Mission',
+    'AP_NavEKF',
     'AP_NavEKF2',
     'AP_NavEKF3',
     'AP_Notify',
@@ -46,7 +47,8 @@ COMMON_VEHICLE_DEPENDENT_LIBRARIES = [
     'AP_SerialManager',
     'AP_Terrain',
     'AP_Vehicle',
-    'DataFlash',
+    'AP_InternalError',
+    'AP_Logger',
     'Filter',
     'GCS_MAVLink',
     'RC_Channel',
@@ -66,6 +68,9 @@ COMMON_VEHICLE_DEPENDENT_LIBRARIES = [
     'AP_Volz_Protocol',
     'AP_SBusOut',
     'AP_IOMCU',
+    'AP_Parachute',
+    'AP_PiccoloCAN',
+    'AP_PiccoloCAN/piccolo_protocol',
     'AP_RAMTRON',
     'AP_RCProtocol',
     'AP_Radio',
@@ -77,8 +82,22 @@ COMMON_VEHICLE_DEPENDENT_LIBRARIES = [
     'AP_Gripper',
     'AP_RTC',
     'AC_Sprayer',
+    'AC_Fence',
     'AC_Avoidance',
     'AP_LandingGear',
+    'AP_RobotisServo',
+    'AP_ToshibaCAN',
+    'AP_NMEA_Output',
+    'AP_Filesystem',
+    'AP_ADSB',
+    'AC_PID',
+    'AP_SerialLED',
+    'AP_EFI',
+    'AP_Hott_Telem',
+    'AP_ESC_Telem',
+    'AP_Stats',
+    'AP_GyroFFT',
+    'AP_RCTelemetry',
 ]
 
 def get_legacy_defines(sketch_name):
@@ -198,6 +217,7 @@ def ap_common_vehicle_libraries(bld):
     if bld.env.DEST_BINFMT == 'pe':
         libraries += [
             'AC_Fence',
+            'AC_AttitudeControl',
         ]
 
     return libraries
@@ -249,6 +269,9 @@ def ap_program(bld,
         program_dir=program_dir,
         **kw
     )
+    if 'use' in kw and bld.env.STATIC_LINKING:
+        # ensure we link against vehicle library
+        tg.env.STLIB += [kw['use']]
 
     for group in program_groups:
         _grouped_programs.setdefault(group, []).append(tg)
@@ -496,6 +519,13 @@ platforms may support this. Example: `waf copter --upload` means "build
 arducopter and upload it to my board".
 ''')
 
+    g.add_option('--upload-port',
+        action='store',
+        dest='upload_port',
+        default=None,
+        help='''Specify the port to be used with the --upload option. For example a port of /dev/ttyS10 indicates that serial port 10 shuld be used.
+''')
+
     g = opt.ap_groups['check']
 
     g.add_option('--check-verbose',
@@ -512,6 +542,13 @@ information across clean commands, so that that information is changed
 only when really necessary. Also, some tasks that don't really produce
 files persist their signature. This option avoids that behavior when
 cleaning the build.
+''')
+
+    g.add_option('--asan',
+        action='store_true',
+        help='''Build using the macOS clang Address Sanitizer. In order to run with
+Address Sanitizer support llvm-symbolizer is required to be on the PATH.
+This option is only supported on macOS versions of clang.
 ''')
 
 def build(bld):

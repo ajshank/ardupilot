@@ -139,6 +139,8 @@ void AP_RCProtocol_DSM::dsm_guess_format(bool reset, const uint8_t dsm_frame[16]
         0xff,	/* 8 channels (DX8) */
         0x1ff,	/* 9 channels (DX9, etc.) */
         0x3ff,	/* 10 channels (DX10) */
+        0x7ff,	/* 11 channels DX8 22ms */
+        0xfff,	/* 12 channels DX8 22ms */
         0x1fff,	/* 13 channels (DX10t) */
         0x3fff	/* 18 channels (DX10) */
     };
@@ -169,7 +171,7 @@ void AP_RCProtocol_DSM::dsm_guess_format(bool reset, const uint8_t dsm_frame[16]
     }
 
     /* call ourselves to reset our state ... we have to try again */
-    debug("DSM: format detect fail, 10: 0x%08x %d 11: 0x%08x %d", cs10, votes10, cs11, votes11);
+    debug("DSM: format detect fail, 10: 0x%08x %u 11: 0x%08x %u", cs10, votes10, cs11, votes11);
     dsm_guess_format(true, dsm_frame);
 }
 
@@ -267,6 +269,7 @@ bool AP_RCProtocol_DSM::dsm_decode(uint32_t frame_time_ms, const uint8_t dsm_fra
 
         case 2:
             channel = 1;
+            break;
 
         default:
             break;
@@ -405,7 +408,6 @@ bool AP_RCProtocol_DSM::dsm_parse_byte(uint32_t frame_time_ms, uint8_t b, uint16
         if ((frame_time_ms - last_rx_time_ms) >= 5) {
             dsm_decode_state = DSM_DECODE_STATE_SYNC;
             byte_input.ofs = 0;
-            chan_count = 0;
             byte_input.buf[byte_input.ofs++] = b;
         }
         break;
@@ -422,6 +424,8 @@ bool AP_RCProtocol_DSM::dsm_parse_byte(uint32_t frame_time_ms, uint8_t b, uint16
         if (byte_input.ofs < DSM_FRAME_SIZE) {
             break;
         }
+
+        log_data(AP_RCProtocol::DSM, frame_time_ms*1000U, byte_input.buf, byte_input.ofs);
 
         /*
          * Great, it looks like we might have a frame.  Go ahead and

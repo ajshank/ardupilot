@@ -29,6 +29,7 @@
 #define HAVE_AP_BLHELI_SUPPORT
 
 #include <AP_Param/AP_Param.h>
+#include <Filter/LowPassFilter.h>
 #include "msp_protocol.h"
 #include "blheli_4way_protocol.h"
 
@@ -46,7 +47,7 @@ public:
     static const struct AP_Param::GroupInfo var_info[];
 
     struct telem_data {
-        uint8_t temperature; // degrees C
+        int8_t temperature;  // degrees C, negative values allowed
         uint16_t voltage;    // volts * 100
         uint16_t current;    // amps * 100
         uint16_t consumption;// mAh
@@ -57,16 +58,20 @@ public:
 
     // get the most recent telemetry data packet for a motor
     bool get_telem_data(uint8_t esc_index, struct telem_data &td);
+    // return the average motor frequency in Hz for dynamic filtering
+    float get_average_motor_frequency_hz() const;
+    // return all of the motor frequencies in Hz for dynamic filtering
+    uint8_t get_motor_frequencies_hz(uint8_t nfreqs, float* freqs) const;
 
     static AP_BLHeli *get_singleton(void) {
-        return singleton;
+        return _singleton;
     }
 
     // send ESC telemetry messages over MAVLink
     void send_esc_telemetry_mavlink(uint8_t mav_chan);
     
 private:
-    static AP_BLHeli *singleton;
+    static AP_BLHeli *_singleton;
     
     // mask of channels to use for BLHeli protocol
     AP_Int32 channel_mask;
@@ -222,6 +227,9 @@ private:
 
     struct telem_data last_telem[max_motors];
 
+    // previous motor rpm so that changes can be slewed
+    float prev_motor_rpm[max_motors];
+
     // have we initialised the interface?
     bool initialised;
 
@@ -236,6 +244,9 @@ private:
 
     // have we locked the UART?
     bool uart_locked;
+
+    // true if we have a mix of reversable and normal ESC
+    bool mixed_type;
 
     // mapping from BLHeli motor numbers to RC output channels
     uint8_t motor_map[max_motors];

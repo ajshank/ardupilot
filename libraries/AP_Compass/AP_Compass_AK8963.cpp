@@ -17,7 +17,6 @@
 
 #include <AP_Math/AP_Math.h>
 #include <AP_HAL/AP_HAL.h>
-#include <AP_Common/Semaphore.h>
 
 #include "AP_Compass_AK8963.h"
 #include <AP_InertialSensor/AP_InertialSensor_Invensense.h>
@@ -91,7 +90,7 @@ AP_Compass_Backend *AP_Compass_AK8963::probe_mpu9250(AP_HAL::OwnPtr<AP_HAL::I2CD
     if (!dev) {
         return nullptr;
     }
-    AP_InertialSensor &ins = *AP_InertialSensor::get_instance();
+    AP_InertialSensor &ins = *AP_InertialSensor::get_singleton();
 
     /* Allow MPU9250 to shortcut auxiliary bus and host bus */
     ins.detect_backends();
@@ -102,7 +101,7 @@ AP_Compass_Backend *AP_Compass_AK8963::probe_mpu9250(AP_HAL::OwnPtr<AP_HAL::I2CD
 AP_Compass_Backend *AP_Compass_AK8963::probe_mpu9250(uint8_t mpu9250_instance,
                                                      enum Rotation rotation)
 {
-    AP_InertialSensor &ins = *AP_InertialSensor::get_instance();
+    AP_InertialSensor &ins = *AP_InertialSensor::get_singleton();
 
     AP_AK8963_BusDriver *bus =
         new AP_AK8963_BusDriver_Auxiliary(ins, HAL_INS_MPU9250_SPI, mpu9250_instance, AK8963_I2C_ADDR);
@@ -123,10 +122,10 @@ bool AP_Compass_AK8963::init()
 {
     AP_HAL::Semaphore *bus_sem = _bus->get_semaphore();
 
-    if (!bus_sem || !_bus->get_semaphore()->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
-        hal.console->printf("AK8963: Unable to get bus semaphore\n");
+    if (!bus_sem) {
         return false;
     }
+    _bus->get_semaphore()->take_blocking();
 
     if (!_bus->configure()) {
         hal.console->printf("AK8963: Could not configure the bus\n");
@@ -156,13 +155,13 @@ bool AP_Compass_AK8963::init()
     _initialized = true;
 
     /* register the compass instance in the frontend */
-    _compass_instance = register_compass();
-
-    set_rotation(_compass_instance, _rotation);
-    
     _bus->set_device_type(DEVTYPE_AK8963);
+    if (!register_compass(_bus->get_bus_id(), _compass_instance)) {
+        goto fail;
+    }
     set_dev_id(_compass_instance, _bus->get_bus_id());
 
+    set_rotation(_compass_instance, _rotation);
     bus_sem->give();
 
     _bus->register_periodic_callback(10000, FUNCTOR_BIND_MEMBER(&AP_Compass_AK8963::_update, void));

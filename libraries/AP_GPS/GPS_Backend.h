@@ -50,20 +50,26 @@ public:
 
     virtual void broadcast_configuration_failure_reason(void) const { return ; }
 
-    virtual void handle_msg(const mavlink_message_t *msg) { return ; }
+    virtual void handle_msg(const mavlink_message_t &msg) { return ; }
 
     // driver specific lag, returns true if the driver is confident in the provided lag
     virtual bool get_lag(float &lag) const { lag = 0.2f; return true; }
 
     // driver specific health, returns true if the driver is healthy
     virtual bool is_healthy(void) const { return true; }
+    // returns true if the GPS is doing any logging it is expected to
+    virtual bool logging_healthy(void) const { return true; }
 
     virtual const char *name() const = 0;
 
     void broadcast_gps_type() const;
-    virtual void Write_DataFlash_Log_Startup_messages() const;
+    virtual void Write_AP_Logger_Log_Startup_messages() const;
 
     virtual bool prepare_for_arming(void) { return true; }
+
+    // optional support for retrieving RTCMv3 data from a moving baseline base
+    virtual bool get_RTCMV3(const uint8_t *&bytes, uint16_t &len) { return false; }
+    virtual void clear_RTCMV3(void) {};
 
 protected:
     AP_HAL::UARTDriver *port;           ///< UART we are attached to
@@ -87,7 +93,7 @@ protected:
 
     void _detection_message(char *buffer, uint8_t buflen) const;
 
-    bool should_df_log() const;
+    bool should_log() const;
 
     /*
       set a timestamp based on arrival time on uart at current byte,
@@ -96,7 +102,14 @@ protected:
     void set_uart_timestamp(uint16_t nbytes);
 
     void check_new_itow(uint32_t itow, uint32_t msg_length);
-    
+
+    /*
+      access to driver option bits
+     */
+    uint16_t driver_options(void) const {
+        return uint16_t(gps._driver_options.get());
+    }
+
 private:
     // itow from previous message
     uint32_t _last_itow;
