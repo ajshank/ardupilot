@@ -1484,9 +1484,10 @@ class ModeComputer : public Mode {
 
 public:
     // inherit constructor
-    using Copter::Mode::Mode;
+    using Mode::Mode;
 
-
+    void run() override;
+    bool init( bool ignore_checks ) override;
     bool requires_GPS() const override { return false; }
     bool has_manual_throttle() const override { return false; }
     bool allows_arming(bool from_gcs) const override { return from_gcs; }
