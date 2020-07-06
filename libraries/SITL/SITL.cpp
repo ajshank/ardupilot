@@ -252,7 +252,7 @@ const AP_Param::GroupInfo SITL::var_info3[] = {
     AP_GROUPINFO("VICON_YAWERR",  19, SITL,  vicon_yaw_error, 0),
 
     // vicon message type mask
-    AP_GROUPINFO("VICON_TMASK",   20, SITL,  vicon_type_mask, 1),
+    AP_GROUPINFO("VICON_TMASK",   20, SITL,  vicon_type_mask, 3),
 
     // vicon velocity glitch in NED frame
     AP_GROUPINFO("VICON_VGLI",    21, SITL,  vicon_vel_glitch, 0),
@@ -272,6 +272,9 @@ const AP_Param::GroupInfo SITL::var_info3[] = {
     AP_GROUPINFO("MAG3_ODI",     29, SITL,  mag_offdiag[2], 0),
     AP_GROUPINFO("MAG3_ORIENT",  30, SITL,  mag_orient[2], 0),
 #endif
+
+    // @Path: ./SIM_RichenPower.cpp
+    AP_SUBGROUPINFO(richenpower_sim, "RICH_", 31, SITL, RichenPower),
 
     AP_GROUPEND
 

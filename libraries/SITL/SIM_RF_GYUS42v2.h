@@ -13,40 +13,36 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 /*
-  base class for serially-attached simulated devices
+  Simulator for the GY-US42-v2 serial rangefinder
+
+./Tools/autotest/sim_vehicle.py --gdb --debug -v ArduCopter -A --uartF=sim:gyus42v2 --speedup=1
+
+param set SERIAL5_PROTOCOL 9
+param set RNGFND1_TYPE 31
+graph RANGEFINDER.distance
+graph GLOBAL_POSITION_INT.relative_alt/1000-RANGEFINDER.distance
+reboot
+
+arm throttle
+rc 3 1600
 */
 
 #pragma once
 
-#include <unistd.h>
+#include "SIM_SerialRangeFinder.h"
 
 namespace SITL {
 
-class SerialDevice {
+class RF_GYUS42v2 : public SerialRangeFinder {
 public:
 
-    SerialDevice();
+    uint32_t packet_for_alt(uint16_t alt_cm, uint8_t *buffer, uint8_t buflen) override;
 
-    // return fd on which data from the device can be read
-    // to the device can be written
-    int fd() { return fd_their_end; }
-    // return fd on which data to the device can be written
-    int write_fd() { return read_fd_their_end; }
+    // TODO: work this out
+    uint16_t reading_interval_ms() const override { return 100; }
 
-    ssize_t read_from_autopilot(char *buffer, size_t size);
-    ssize_t write_to_autopilot(const char *buffer, size_t size);
+private:
 
-protected:
-
-    class SITL *_sitl;
-
-    int fd_their_end;
-    int fd_my_end;
-
-    int read_fd_their_end;
-    int read_fd_my_end;
-
-    bool init_sitl_pointer();
 };
 
 }
