@@ -31,7 +31,7 @@ enum autopilot_yaw_mode {
 #define HIL_MODE_DISABLED               0
 #define HIL_MODE_SENSORS                1
 
-<<<<<<< HEAD
+
 // Auto Pilot Modes enumeration
 enum control_mode_t {
     STABILIZE =     0,  // manual airframe angle with manual throttle
@@ -81,8 +81,7 @@ enum mode_reason_t {
     MODE_REASON_TMODE,
 };
 
-=======
->>>>>>> 0cbff6ac66b089288904ac015de7cc7d8540ac17
+
 // Tuning enumeration
 enum tuning_func {
     TUNING_NONE =                        0, //
