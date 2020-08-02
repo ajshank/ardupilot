@@ -26,6 +26,7 @@
 #include <AP_BoardConfig/AP_BoardConfig_CAN.h>
 #include <AP_Button/AP_Button.h>
 #include <AP_GPS/AP_GPS.h>
+#include <AP_Generator/AP_Generator_RichenPower.h>
 #include <AP_Logger/AP_Logger.h>
 #include <AP_Notify/AP_Notify.h>                    // Notify library
 #include <AP_Param/AP_Param.h>
@@ -40,6 +41,7 @@
 #include <AP_ESC_Telem/AP_ESC_Telem.h>
 #include <AP_GyroFFT/AP_GyroFFT.h>
 #include <AP_VisualOdom/AP_VisualOdom.h>
+#include <AP_RCTelemetry/AP_VideoTX.h>
 
 class AP_Vehicle : public AP_HAL::HAL::Callbacks {
 
@@ -220,6 +222,7 @@ protected:
 #if HAL_GYROFFT_ENABLED
     AP_GyroFFT gyro_fft;
 #endif
+    AP_VideoTX vtx;
     AP_SerialManager serial_manager;
 
     AP_Relay relay;
@@ -249,6 +252,10 @@ protected:
 
     static const struct AP_Param::GroupInfo var_info[];
     static const struct AP_Scheduler::Task scheduler_tasks[];
+
+#if GENERATOR_ENABLED
+    AP_Generator_RichenPower generator;
+#endif
 
 private:
 

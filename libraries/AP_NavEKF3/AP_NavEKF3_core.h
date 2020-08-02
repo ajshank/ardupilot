@@ -79,6 +79,12 @@
 // number of seconds a request to reset the yaw to the GSF estimate is active before it times out
 #define YAW_RESET_TO_GSF_TIMEOUT_MS 5000
 
+// accuracy threshold applied to GSF yaw estimate use
+#define GSF_YAW_ACCURACY_THRESHOLD_DEG 15.0f
+
+// number of continuous valid GSF yaw estimates required to confirm valid hostory
+#define GSF_YAW_VALID_HISTORY_THRESHOLD 5
+
 class AP_AHRS;
 
 class NavEKF3_core : public NavEKF_core_common
@@ -316,7 +322,8 @@ public:
     void writeExtNavVelData(const Vector3f &vel, float err, uint32_t timeStamp_ms, uint16_t delay_ms);
 
     // called by vehicle code to specify that a takeoff is happening
-    // causes the EKF to compensate for expected barometer errors due to ground effect
+    // causes the EKF to compensate for expected barometer errors due to rotor wash ground interaction
+    // causes the EKF to start the EKF-GSF yaw estimator
     void setTakeoffExpected(bool val);
 
     // called by vehicle code to specify that a touchdown is expected to happen
@@ -419,7 +426,6 @@ public:
         ALWAYS = 4,
         EXTERNAL_YAW = 5,
         EXTERNAL_YAW_FALLBACK = 6,
-        GSF_YAW = 7,
     };
 
     // are we using an external yaw source? This is needed by AHRS attitudes_consistent check
@@ -778,8 +784,8 @@ private:
     // align the yaw angle for the quaternion states using the external yaw sensor
     void alignYawAngle();
 
-    // update quaternion, mag field states and associated variances using magnetomer and declination data
-    void calcQuatAndFieldStates();
+    // update mag field states and associated variances using magnetomer and declination data
+    void resetMagFieldStates();
 
     // reset yaw based on magnetic field sample
     void setYawFromMag();
@@ -867,11 +873,14 @@ private:
     // Set the NED origin to be used until the next filter reset
     void setOrigin(const Location &loc);
 
-    // determine if a takeoff is expected so that we can compensate for expected barometer errors due to ground effect
-    bool getTakeoffExpected();
+    // update and return the status that indicates takeoff is expected so that we can compensate for expected
+    // barometer errors due to rotor-wash ground interaction and start the EKF-GSF yaw estimator prior to
+    // takeoff movement
+    bool updateTakeoffExpected();
 
-    // determine if a touchdown is expected so that we can compensate for expected barometer errors due to ground effect
-    bool getTouchdownExpected();
+    // update and return the status that indicates touchdown is expected so that we can compensate for expected
+    // barometer errors due to rotor-wash ground interaction
+    bool updateTouchdownExpected();
 
     // Assess GPS data quality and set gpsGoodToAlign
     void calcGpsGoodToAlign(void);
@@ -1004,7 +1013,6 @@ private:
     bool inFlight;                  // true when the vehicle is definitely flying
     bool prevInFlight;              // value inFlight from previous frame - used to detect transition
     bool manoeuvring;               // boolean true when the flight vehicle is performing horizontal changes in velocity
-    uint32_t airborneDetectTime_ms; // last time flight movement was detected
     Vector6 innovVelPos;            // innovation output for a group of measurements
     Vector6 varInnovVelPos;         // innovation variance output for a group of measurements
     Vector6 velPosObs;              // observations for combined velocity and positon group of measurements (3x1 m , 3x1 m/s)
@@ -1040,6 +1048,7 @@ private:
     uint32_t lastSynthYawTime_ms;   // time stamp when yaw observation was last fused (msec)
     uint32_t ekfStartTime_ms;       // time the EKF was started (msec)
     Vector2f lastKnownPositionNE;   // last known position
+    uint32_t lastLaunchAccelTime_ms;
     uint32_t lastDecayTime_ms;      // time of last decay of GPS position offset
     float velTestRatio;             // sum of squares of GPS velocity innovation divided by fail threshold
     float posTestRatio;             // sum of squares of GPS position innovation divided by fail threshold
@@ -1326,11 +1335,14 @@ private:
     uint32_t timeAtArming_ms;       // time in msec that the vehicle armed
 
     // baro ground effect
-    bool expectGndEffectTakeoff;      // external state from ArduCopter - takeoff expected
-    uint32_t takeoffExpectedSet_ms;   // system time at which expectGndEffectTakeoff was set
-    bool expectGndEffectTouchdown;    // external state from ArduCopter - touchdown expected
+    bool expectGndEffectTakeoff;      // external state - takeoff expected in VTOL flight
+    bool expectGndEffectTouchdown;    // external state - touchdown expected in VTOL flight
     uint32_t touchdownExpectedSet_ms; // system time at which expectGndEffectTouchdown was set
     float meaHgtAtTakeOff;            // height measured at commencement of takeoff
+
+    // takeoff preparation used to start EKF-GSF yaw estimator and mitigate rotor-wash ground interaction Baro errors
+    uint32_t takeoffExpectedSet_ms;   // system time at which expectTakeoff was set
+    bool expectTakeoff;               // external state from vehicle conrol code - takeoff expected
 
     // control of post takeoff magentic field and heading resets
     bool finalInflightYawInit;      // true when the final post takeoff initialisation of yaw angle has been performed
@@ -1476,4 +1488,5 @@ private:
     uint32_t EKFGSF_yaw_reset_request_ms;   // timestamp of last emergency yaw reset request (uSec)
     uint8_t EKFGSF_yaw_reset_count;         // number of emergency yaw resets performed
     bool EKFGSF_run_filterbank;             // true when the filter bank is active
+    uint8_t EKFGSF_yaw_valid_count;         // number of updates since the last invalid yaw estimate
 };

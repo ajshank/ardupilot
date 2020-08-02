@@ -1488,7 +1488,7 @@ class AutoTestCopter(AutoTest):
 
         # switch to stabilize mode
         self.change_mode("STABILIZE")
-        self.set_rc(3, 1500)
+        self.set_rc(3, 1700)
 
         # start copter yawing slowly
         self.set_rc(4, 1550)
@@ -1716,6 +1716,24 @@ class AutoTestCopter(AutoTest):
     def fly_autotune_switch(self):
         """Test autotune on a switch with gains being saved"""
 
+        self.context_push()
+
+        ex = None
+
+        try:
+            self.fly_autotune_switch_body()
+        except Exception as e:
+            self.progress("Exception caught: %s" % (
+                self.get_exception_stacktrace(e)))
+            ex = e
+
+        self.context_pop()
+        self.reboot_sitl()
+
+        if ex is not None:
+            raise ex
+
+    def fly_autotune_switch_body(self):
         self.set_parameter("RC8_OPTION", 17)
         self.set_parameter("ATC_RAT_RLL_FLTT", 20)
         rlld = self.get_parameter("ATC_RAT_RLL_D")
@@ -3841,49 +3859,55 @@ class AutoTestCopter(AutoTest):
         self.context_push()
 
         ex = None
-        try:
-            self.set_rc_default()
-            self.set_parameter("AHRS_EKF_TYPE", 10)
-            self.set_parameter("INS_LOG_BAT_MASK", 3)
-            self.set_parameter("INS_LOG_BAT_OPT", 0)
-            # set the gyro filter high so we can observe behaviour
-            self.set_parameter("INS_GYRO_FILTER", 100)
-            self.set_parameter("LOG_BITMASK", 958)
-            self.set_parameter("LOG_DISARMED", 0)
-            self.set_parameter("SIM_VIB_MOT_MAX", 350)
-            self.set_parameter("SIM_GYR_RND", 20)
-            self.reboot_sitl()
+        # we are dealing with probabalistic scenarios involving threads, have two bites at the cherry
+        for loop in ["first", "second"]:
+            try:
+                self.set_rc_default()
+                self.set_parameter("AHRS_EKF_TYPE", 10)
+                self.set_parameter("INS_LOG_BAT_MASK", 3)
+                self.set_parameter("INS_LOG_BAT_OPT", 0)
+                # set the gyro filter high so we can observe behaviour
+                self.set_parameter("INS_GYRO_FILTER", 100)
+                self.set_parameter("LOG_BITMASK", 958)
+                self.set_parameter("LOG_DISARMED", 0)
+                self.set_parameter("SIM_VIB_MOT_MAX", 350)
+                self.set_parameter("SIM_GYR_RND", 20)
+                self.reboot_sitl()
 
-            self.takeoff(10, mode="ALT_HOLD")
+                self.takeoff(10, mode="ALT_HOLD")
 
-            # find a motor peak
-            freq, vfr_hud, peakdb = self.hover_and_check_matched_frequency_with_fft(-15, 200, 300)
+                # find a motor peak
+                freq, vfr_hud, peakdb = self.hover_and_check_matched_frequency_with_fft(-15, 200, 300)
 
-            # now add a dynamic notch and check that the peak is squashed
-            self.set_parameter("INS_LOG_BAT_OPT", 2)
-            self.set_parameter("INS_HNTCH_ENABLE", 1)
-            self.set_parameter("INS_HNTCH_FREQ", freq)
-            self.set_parameter("INS_HNTCH_REF", vfr_hud.throttle/100.)
-            # first and third harmonic
-            self.set_parameter("INS_HNTCH_HMNCS", 5)
-            self.set_parameter("INS_HNTCH_ATT", 50)
-            self.set_parameter("INS_HNTCH_BW", freq/2)
-            self.reboot_sitl()
+                # now add a dynamic notch and check that the peak is squashed
+                self.set_parameter("INS_LOG_BAT_OPT", 2)
+                self.set_parameter("INS_HNTCH_ENABLE", 1)
+                self.set_parameter("INS_HNTCH_FREQ", freq)
+                self.set_parameter("INS_HNTCH_REF", vfr_hud.throttle/100.)
+                # first and third harmonic
+                self.set_parameter("INS_HNTCH_HMNCS", 5)
+                self.set_parameter("INS_HNTCH_ATT", 50)
+                self.set_parameter("INS_HNTCH_BW", freq/2)
+                self.reboot_sitl()
 
-            freq, vfr_hud, peakdb1 = self.hover_and_check_matched_frequency_with_fft(-10, 20, 350, reverse=True)
+                freq, vfr_hud, peakdb1 = self.hover_and_check_matched_frequency_with_fft(-10, 20, 350, reverse=True)
 
-            # now add double dynamic notches and check that the peak is squashed
-            self.set_parameter("INS_HNTCH_OPTS", 1)
-            self.reboot_sitl()
+                # now add double dynamic notches and check that the peak is squashed
+                self.set_parameter("INS_HNTCH_OPTS", 1)
+                self.reboot_sitl()
 
-            freq, vfr_hud, peakdb2 = self.hover_and_check_matched_frequency_with_fft(-15, 20, 350, reverse=True)
+                freq, vfr_hud, peakdb2 = self.hover_and_check_matched_frequency_with_fft(-15, 20, 350, reverse=True)
 
-            # double-notch should do better
-            if peakdb2 > peakdb1:
-                raise NotAchievedException("Double-notch peak was higher than single-notch peak %fdB < %fdB" % (peakdb2, peakdb1))
+                # double-notch should do better, but check for within 5%
+                if peakdb2 * 1.05 > peakdb1:
+                    raise NotAchievedException("Double-notch peak was higher than single-notch peak %fdB > %fdB" % (peakdb2, peakdb1))
 
-        except Exception as e:
-            ex = e
+            except Exception as e:
+                self.progress("Exception caught in %s loop: %s" % (loop, self.get_exception_stacktrace(e)))
+                if loop != "second":
+                    continue
+                ex = e
+            break
 
         self.context_pop()
 
@@ -4052,7 +4076,9 @@ class AutoTestCopter(AutoTest):
                 self.set_parameter("INS_HNTCH_OPTS", 3)
                 self.reboot_sitl()
 
-                self.hover_and_check_matched_frequency_with_fft(-1, 100, 350, reverse=True)
+                # 5db is far in excess of the attenuation that the double dynamic-harmonic notch is able
+                # to provide (-7dB on average), but without the notch the peak is around 20dB so still a safe test
+                self.hover_and_check_matched_frequency_with_fft(5, 100, 350, reverse=True)
 
                 self.set_parameter("SIM_VIB_FREQ_X", 0)
                 self.set_parameter("SIM_VIB_FREQ_Y", 0)
@@ -4766,6 +4792,40 @@ class AutoTestCopter(AutoTest):
         if ex is not None:
             raise ex
 
+    def test_richenpower(self):
+        self.set_parameter("SERIAL5_PROTOCOL", 30)
+        self.set_parameter("SIM_RICH_ENABLE", 1)
+        self.set_parameter("SERVO8_FUNCTION", 42)
+        self.set_parameter("SIM_RICH_CTRL", 8)
+        self.set_parameter("RC9_OPTION", 85)
+        self.set_parameter("LOG_DISARMED", 1)
+        self.customise_SITL_commandline(["--uartF=sim:richenpower"])
+        self.set_rc(9, 1000) # remember this is a switch position - stop
+        self.mavproxy.expect("requested state is not RUN")
+        messages = []
+        def my_message_hook(mav, m):
+            if m.get_type() != 'STATUSTEXT':
+                return
+            messages.append(m)
+        self.install_message_hook(my_message_hook)
+        try:
+            self.set_rc(9, 2000) # remember this is a switch position - run
+        finally:
+            self.remove_message_hook(my_message_hook)
+        if "Generator HIGH" not in [x.text for x in messages]:
+            self.mavproxy.expect("Generator HIGH")
+        self.set_rc(9, 1000) # remember this is a switch position - stop
+        self.mavproxy.expect("requested state is not RUN", timeout=200)
+        self.set_message_rate_hz("GENERATOR_STATUS", 1)
+        self.drain_mav_unparsed()
+        m = self.assert_receive_message("GENERATOR_STATUS",timeout=10)
+        if m.generator_speed == 0:
+            raise NotAchievedException("Zero GENERATOR_STATUS.generator_speed")
+        self.set_message_rate_hz("GENERATOR_STATUS", -1)
+        self.set_parameter("LOG_DISARMED", 0)
+        if not self.current_onboard_log_contains_message("GEN"):
+            raise NotAchievedException("Did not find expected GEN message")
+
     def get_mission_count(self):
         return self.get_parameter("MIS_TOTAL")
 
@@ -4900,6 +4960,7 @@ class AutoTestCopter(AutoTest):
             ("benewake_tfmini", 20),
             ("lanbao", 26),
             ("benewake_tf03", 27),
+            ("gyus42v2", 31),
         ]
         while len(drivers):
             do_drivers = drivers[0:3]
@@ -4920,6 +4981,21 @@ class AutoTestCopter(AutoTest):
 
         self.fly_rangefinder_mavlink()
 
+    def fly_ship_takeoff(self):
+        # test ship takeoff
+        self.wait_groundspeed(0, 2)
+        self.set_parameter("SIM_SHIP_ENABLE", 1)
+        self.set_parameter("SIM_SHIP_SPEED", 10)
+        self.set_parameter("SIM_SHIP_DSIZE", 2)
+        self.wait_ready_to_arm()
+        # we should be moving with the ship
+        self.wait_groundspeed(9, 11)
+        self.takeoff(10)
+        # above ship our speed drops to 0
+        self.wait_groundspeed(0, 2)
+        self.land_and_disarm()
+        # ship will have moved on, so we land on the water which isn't moving
+        self.wait_groundspeed(0, 2)
 
     def test_parameter_validation(self):
         self.progress("invalid; min must be less than max:")
@@ -5120,6 +5196,10 @@ class AutoTestCopter(AutoTest):
              "Test Buttons",
              self.test_button),
 
+            ("ShipTakeoff",
+             "Fly Simulated Ship Takeoff",
+             self.fly_ship_takeoff),
+
             ("RangeFinder",
              "Test RangeFinder Basic Functionality",
              self.test_rangefinder),
@@ -5167,6 +5247,10 @@ class AutoTestCopter(AutoTest):
              "Test Different Altitude Types",
              self.test_altitude_types),
 
+            ("RichenPower",
+             "Test RichenPower generator",
+             self.test_richenpower),
+
             ("LogUpload",
              "Log upload",
              self.log_upload),
@@ -5199,6 +5283,10 @@ class AutoTestCopter(AutoTest):
             ("SITLCompassCalibration",
              "Test SITL onboard compass calibration",
              self.test_mag_calibration),
+
+            ("CRSF",
+             "Test RC CRSF",
+             self.test_crsf),
 
             ("LogUpload",
              "Log upload",
@@ -5344,7 +5432,6 @@ class AutoTestHeli(AutoTestCopter):
             self.zero_throttle()
             self.set_rc(8, 1000)
             self.wait_ready_to_arm()
-            self.run_test("Arm features", self.test_arm_feature)
             # Arm
             self.arm_vehicle()
             self.progress("Raising rotor speed")
@@ -5391,6 +5478,8 @@ class AutoTestHeli(AutoTestCopter):
         self.context_pop()
 
         if ex is not None:
+            self.progress("Caught exception: %s" %
+                          self.get_exception_stacktrace(ex))
             raise ex
 
     def fly_heli_stabilize_takeoff(self):

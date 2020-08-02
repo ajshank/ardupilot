@@ -174,6 +174,7 @@ void trace(const int trace, const char *message, ...) {
   }
 }
 
+void error(const int code, const char *message, ...) __attribute__ ((noreturn));
 void error(const int code, const char *message, ...) {
   char * fmt = malloc(strlen(message)+1024);
   if (fmt == NULL) {
@@ -1375,49 +1376,80 @@ void emit_userdata_method(const struct userdata *data, const struct method *meth
     fprintf(source, "    AP::scheduler().get_semaphore().take_blocking();\n");
   }
 
+  int static_cast = TRUE;
+
   switch (method->return_type.type) {
-    case TYPE_BOOLEAN:
-      fprintf(source, "    const bool data = ud->%s(", method->name);
-      break;
-    case TYPE_FLOAT:
-      fprintf(source, "    const float data = ud->%s(", method->name);
-      break;
-    case TYPE_INT8_T:
-      fprintf(source, "    const int8_t data = ud->%s(", method->name);
-      break;
-    case TYPE_INT16_T:
-      fprintf(source, "    const int16_t data = ud->%s(", method->name);
-      break;
-    case TYPE_INT32_T:
-      fprintf(source, "    const int32_t data = ud->%s(", method->name);
-      break;
     case TYPE_STRING:
       fprintf(source, "    const char * data = ud->%s(", method->name);
-      break;
-    case TYPE_UINT8_T:
-      fprintf(source, "    const uint8_t data = ud->%s(", method->name);
-      break;
-    case TYPE_UINT16_T:
-      fprintf(source, "    const uint16_t data = ud->%s(", method->name);
-      break;
-    case TYPE_UINT32_T:
-      fprintf(source, "    const uint32_t data = ud->%s(", method->name);
+      static_cast = FALSE;
       break;
     case TYPE_ENUM:
       fprintf(source, "    const %s &data = ud->%s(", method->return_type.data.enum_name, method->name);
+      static_cast = FALSE;
       break;
     case TYPE_USERDATA:
       fprintf(source, "    const %s &data = ud->%s(", method->return_type.data.ud.name, method->name);
+      static_cast = FALSE;
       break;
     case TYPE_AP_OBJECT:
       fprintf(source, "    %s *data = ud->%s(", method->return_type.data.ud.name, method->name);
+      static_cast = FALSE;
       break;
     case TYPE_NONE:
       fprintf(source, "    ud->%s(", method->name);
+      static_cast = FALSE;
       break;
     case TYPE_LITERAL:
       error(ERROR_USERDATA, "Can't return a literal from a method");
       break;
+    case TYPE_BOOLEAN:
+    case TYPE_FLOAT:
+    case TYPE_INT8_T:
+    case TYPE_INT16_T:
+    case TYPE_INT32_T:
+    case TYPE_UINT8_T:
+    case TYPE_UINT16_T:
+    case TYPE_UINT32_T:
+      break;
+  }
+
+  if (static_cast) {
+    char *var_type_name;
+    switch (method->return_type.type) {
+      case TYPE_BOOLEAN:
+        var_type_name = "bool";
+        break;
+      case TYPE_FLOAT:
+        var_type_name = "float";
+        break;
+      case TYPE_INT8_T:
+        var_type_name = "int8_t";
+        break;
+      case TYPE_INT16_T:
+        var_type_name = "int16_t";
+        break;
+      case TYPE_INT32_T:
+        var_type_name = "int32_t";
+        break;
+      case TYPE_UINT8_T:
+        var_type_name = "uint8_t";
+        break;
+      case TYPE_UINT16_T:
+        var_type_name = "uint16_t";
+        break;
+      case TYPE_UINT32_T:
+        var_type_name = "uint32_t";
+        break;
+    case TYPE_STRING:
+    case TYPE_ENUM:
+    case TYPE_USERDATA:
+    case TYPE_AP_OBJECT:
+    case TYPE_NONE:
+    case TYPE_LITERAL:
+        error(ERROR_USERDATA, "Unexpected type");
+        break;
+    }
+    fprintf(source, "    const %s data = static_cast<%s>(ud->%s(", var_type_name, var_type_name, method->name);
   }
 
   if (arg_count != 2) {
@@ -1457,7 +1489,11 @@ void emit_userdata_method(const struct userdata *data, const struct method *meth
             fprintf(source, ",\n");
     }
   }
-  fprintf(source, "%s);\n\n", "");
+  if (static_cast) {
+    fprintf(source, "%s));\n\n", "");
+  } else {
+    fprintf(source, "%s);\n\n", "");
+  }
 
   if (data->flags & UD_FLAG_SEMAPHORE) {
     fprintf(source, "    ud->get_semaphore().give();\n");
@@ -1521,8 +1557,9 @@ void emit_userdata_method(const struct userdata *data, const struct method *meth
           arg_index++;
           arg = arg->next;
         }
+        fprintf(source, "        return %d;\n", return_count);
         fprintf(source, "    } else {\n");
-        fprintf(source, "        lua_pushnil(L);\n");
+        fprintf(source, "        return 0;\n");
         fprintf(source, "    }\n");
       } else {
         fprintf(source, "    lua_pushboolean(L, data);\n");
@@ -1566,7 +1603,9 @@ void emit_userdata_method(const struct userdata *data, const struct method *meth
       break;
   }
 
-  fprintf(source, "    return %d;\n", return_count);
+  if ((method->return_type.type != TYPE_BOOLEAN) || ((method->flags & TYPE_FLAGS_NULLABLE) == 0)) {
+      fprintf(source, "    return %d;\n", return_count);
+  }
 
   fprintf(source, "}\n\n");
 }

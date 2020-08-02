@@ -392,6 +392,7 @@ struct PACKED log_POWR {
     float Vcc;
     float Vservo;
     uint16_t flags;
+    uint16_t accumulated_flags;
     uint8_t safety_and_arm;
 };
 
@@ -756,6 +757,7 @@ struct PACKED log_PID {
     float   I;
     float   D;
     float   FF;
+    float   Dmod;
 };
 
 struct PACKED log_Current {
@@ -1275,10 +1277,10 @@ struct PACKED log_Arm_Disarm {
 #define MAG_UNITS "sGGGGGGGGG-s"
 #define MAG_MULTS "FCCCCCCCCC-F"
 
-#define PID_LABELS "TimeUS,Tar,Act,Err,P,I,D,FF"
-#define PID_FMT    "Qfffffff"
-#define PID_UNITS  "s-------"
-#define PID_MULTS  "F-------"
+#define PID_LABELS "TimeUS,Tar,Act,Err,P,I,D,FF,Dmod"
+#define PID_FMT    "Qffffffff"
+#define PID_UNITS  "s--------"
+#define PID_MULTS  "F--------"
 
 #define QUAT_LABELS "TimeUS,C,Q1,Q2,Q3,Q4"
 #define QUAT_FMT    "QBffff"
@@ -1605,6 +1607,45 @@ struct PACKED log_Arm_Disarm {
 // @Field: Yaw: vehicle yaw
 // @Field: U: boolean value indicating whether this GPS is in use
 
+// @LoggerMessage: GRAW
+// @Description: Raw uBlox data
+// @Field: TimeUS: Time since system startup
+// @Field: WkMS: receiver TimeOfWeek measurement
+// @Field: Week: GPS week
+// @Field: numSV: number of space vehicles seen
+// @Field: sv: space vehicle number of first vehicle
+// @Field: cpMes: carrier phase measurement
+// @Field: prMes: pseudorange measurement
+// @Field: doMes: Doppler measurement
+// @Field: mesQI: measurement quality index
+// @Field: cno: carrier-to-noise density ratio
+// @Field: lli: loss of lock indicator
+
+// @LoggerMessage: GRXH
+// @Description: Raw uBlox data - header
+// @Field: TimeUS: Time since system startup
+// @Field: rcvTime: receiver TimeOfWeek measurement
+// @Field: week: GPS week
+// @Field: leapS: GPS leap seconds
+// @Field: numMeas: number of space-vehicle measurements to follow
+// @Field: recStat: receiver tracking status bitfield
+
+// @LoggerMessage: GRXS
+// @Description: Raw uBlox data - space-vehicle data
+// @Field: TimeUS: Time since system startup
+// @Field: prMes: Pseudorange measurement
+// @Field: cpMes: Carrier phase measurement
+// @Field: doMes: Doppler measurement
+// @Field: gnss: GNSS identifier
+// @Field: sv: Satellite identifier
+// @Field: freq: GLONASS frequency slot
+// @Field: lock: carrier phase locktime counter
+// @Field: cno: carrier-to-noise density ratio
+// @Field: prD: estimated pseudorange measurement standard deviation
+// @Field: cpD: estimated carrier phase measurement standard deviation
+// @Field: doD: estimated Doppler measurement standard deviation
+// @Field: trk: tracking status bitfield
+
 // @LoggerMessage: GYR1,GYR2,GYR3
 // @Description: IMU gyroscope data
 // @Field: TimeUS: Time since system startup
@@ -1888,7 +1929,7 @@ struct PACKED log_Arm_Disarm {
 // @Field: Value: parameter vlaue
 
 // @LoggerMessage: PIDR,PIDP,PIDY,PIDA,PIDS
-// @Description: Proportional/Integral/Derivative gain values for Roll/Pitch/Yaw/Z/Steering
+// @Description: Proportional/Integral/Derivative gain values for Roll/Pitch/Yaw/Altitude/Steering
 // @Field: TimeUS: Time since system startup
 // @Field: Tar: desired value
 // @Field: Act: achieved value
@@ -1897,6 +1938,7 @@ struct PACKED log_Arm_Disarm {
 // @Field: I: integral part of PID
 // @Field: D: derivative part of PID
 // @Field: FF: controller feed-forward portion of response
+// @Field: Dmod: scaler applied to D gain to reduce limit cycling
 
 // @LoggerMessage: PM
 // @Description: autopilot system performance and general data dumping ground
@@ -1928,6 +1970,7 @@ struct PACKED log_Arm_Disarm {
 // @Field: Vcc: Flight board voltage
 // @Field: VServo: Servo rail voltage
 // @Field: Flags: System power flags
+// @Field: AccFlags: Accumulated System power flags; all flags which have ever been set
 // @Field: Safety: Hardware Safety Switch status
 
 // @LoggerMessage: PRX
@@ -2354,7 +2397,7 @@ struct PACKED log_Arm_Disarm {
     { LOG_BARO_MSG, sizeof(log_BARO), \
       "BARO",  BARO_FMT, BARO_LABELS, BARO_UNITS, BARO_MULTS }, \
     { LOG_POWR_MSG, sizeof(log_POWR), \
-      "POWR","QffHB","TimeUS,Vcc,VServo,Flags,Safety", "svv--", "F00--" },  \
+      "POWR","QffHHB","TimeUS,Vcc,VServo,Flags,AccFlags,Safety", "svv---", "F00---" },  \
     { LOG_CMD_MSG, sizeof(log_Cmd), \
       "CMD", "QHHHffffLLfB","TimeUS,CTot,CNum,CId,Prm1,Prm2,Prm3,Prm4,Lat,Lng,Alt,Frame", "s-------DUm-", "F-------GG0-" }, \
     { LOG_MAVLINK_COMMAND_MSG, sizeof(log_MAVLink_Command), \

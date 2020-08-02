@@ -444,6 +444,7 @@ static const ap_message STREAM_EXTRA3_msgs[] = {
     MSG_VIBRATION,
     MSG_RPM,
     MSG_ESC_TELEMETRY,
+    MSG_GENERATOR_STATUS,
 };
 static const ap_message STREAM_PARAMS_msgs[] = {
     MSG_NEXT_PARAM
@@ -570,6 +571,55 @@ bool GCS_MAVLINK_Copter::set_home(const Location& loc, bool _lock) {
     return copter.set_home(loc, _lock);
 }
 
+MAV_RESULT GCS_MAVLINK_Copter::handle_command_int_do_reposition(const mavlink_command_int_t &packet)
+{
+    const bool change_modes = ((int32_t)packet.param2 & MAV_DO_REPOSITION_FLAGS_CHANGE_MODE) == MAV_DO_REPOSITION_FLAGS_CHANGE_MODE;
+    if (!copter.flightmode->in_guided_mode() && !change_modes) {
+        return MAV_RESULT_DENIED;
+    }
+
+    // sanity check location
+    if (!check_latlng(packet.x, packet.y)) {
+        return MAV_RESULT_DENIED;
+    }
+
+    Location request_location {};
+    request_location.lat = packet.x;
+    request_location.lng = packet.y;
+
+    if (fabsf(packet.z) > LOCATION_ALT_MAX_M) {
+        return MAV_RESULT_DENIED;
+    }
+
+    Location::AltFrame frame;
+    if (!mavlink_coordinate_frame_to_location_alt_frame((MAV_FRAME)packet.frame, frame)) {
+        return MAV_RESULT_DENIED; // failed as the location is not valid
+    }
+    request_location.set_alt_cm((int32_t)(packet.z * 100.0f), frame);
+
+    if (request_location.sanitize(copter.current_loc)) {
+        // if the location wasn't already sane don't load it
+        return MAV_RESULT_DENIED; // failed as the location is not valid
+    }
+
+    // we need to do this first, as we don't want to change the flight mode unless we can also set the target
+    if (!copter.mode_guided.set_destination(request_location, false, 0, false, 0)) {
+        return MAV_RESULT_FAILED;
+    }
+
+    if (!copter.flightmode->in_guided_mode()) {
+        if (!copter.set_mode(Mode::Number::GUIDED, ModeReason::GCS_COMMAND)) {
+            return MAV_RESULT_FAILED;
+        }
+        // the position won't have been loaded if we had to change the flight mode, so load it again
+        if (!copter.mode_guided.set_destination(request_location, false, 0, false, 0)) {
+            return MAV_RESULT_FAILED;
+        }
+    }
+
+    return MAV_RESULT_ACCEPTED;
+}
+
 MAV_RESULT GCS_MAVLINK_Copter::handle_command_int_packet(const mavlink_command_int_t &packet)
 {
     switch(packet.command) {
@@ -583,6 +633,8 @@ MAV_RESULT GCS_MAVLINK_Copter::handle_command_int_packet(const mavlink_command_i
 #endif
         return MAV_RESULT_UNSUPPORTED;
 
+    case MAV_CMD_DO_REPOSITION:
+        return handle_command_int_do_reposition(packet);
     default:
         return GCS_MAVLINK::handle_command_int_packet(packet);
     }
@@ -631,6 +683,12 @@ MAV_RESULT GCS_MAVLINK_Copter::handle_command_long_packet(const mavlink_command_
         }
         return MAV_RESULT_ACCEPTED;
     }
+
+    case MAV_CMD_DO_LAND_START:
+        if (copter.mode_auto.mission.jump_to_landing_sequence() && copter.set_mode(Mode::Number::AUTO, ModeReason::GCS_COMMAND)) {
+            return MAV_RESULT_ACCEPTED;
+        }
+        return MAV_RESULT_FAILED;
 
     case MAV_CMD_NAV_LOITER_UNLIM:
         if (!copter.set_mode(Mode::Number::LOITER, ModeReason::GCS_COMMAND)) {
@@ -936,18 +994,28 @@ void GCS_MAVLINK_Copter::handleMessage(const mavlink_message_t &msg)
             break;
         }
 
-        // convert thrust to climb rate
-        packet.thrust = constrain_float(packet.thrust, 0.0f, 1.0f);
-        
-        float climb_rate_cms = 0.0f;
-        if (is_equal(packet.thrust, 0.5f)) {
-            climb_rate_cms = 0.0f;
-        } else if (packet.thrust > 0.5f) {
-            // climb at up to WPNAV_SPEED_UP
-            climb_rate_cms = (packet.thrust - 0.5f) * 2.0f * copter.wp_nav->get_default_speed_up();
+        // 0..1 thrust value for computer ctrl
+        float raw_thrust = constrain_float(packet.thrust, 0.0f, 1.0f);
+
+        // check if the message's thrust field should be interpreted as a climb rate or as thrust
+        const bool use_thrust = copter.g2.dev_options.get() & DevOptionSetAttitudeTarget_ThrustAsThrust;
+
+        float climb_rate_or_thrust;
+        if (use_thrust) {
+            // interpret thrust as thrust
+            climb_rate_or_thrust = constrain_float(packet.thrust, -1.0f, 1.0f);
         } else {
-            // descend at up to WPNAV_SPEED_DN
-            climb_rate_cms = (0.5f - packet.thrust) * 2.0f * -fabsf(copter.wp_nav->get_default_speed_down());
+            // convert thrust to climb rate
+            packet.thrust = constrain_float(packet.thrust, 0.0f, 1.0f);
+            if (is_equal(packet.thrust, 0.5f)) {
+                climb_rate_or_thrust = 0.0f;
+            } else if (packet.thrust > 0.5f) {
+                // climb at up to WPNAV_SPEED_UP
+                climb_rate_or_thrust = (packet.thrust - 0.5f) * 2.0f * copter.wp_nav->get_default_speed_up();
+            } else {
+                // descend at up to WPNAV_SPEED_DN
+                climb_rate_or_thrust = (0.5f - packet.thrust) * 2.0f * -fabsf(copter.wp_nav->get_default_speed_down());
+            }
         }
 
         // if the body_yaw_rate field is ignored, use the commanded yaw position
@@ -960,11 +1028,10 @@ void GCS_MAVLINK_Copter::handleMessage(const mavlink_message_t &msg)
 
         // guided modes can still function the same
         copter.mode_guided.set_angle(Quaternion(packet.q[0],packet.q[1],packet.q[2],packet.q[3]),
-            climb_rate_cms, use_yaw_rate, packet.body_yaw_rate);
-            
+                climb_rate_or_thrust, use_yaw_rate, packet.body_yaw_rate, use_thrust);
         // @aj: adding functionality for computer control
         copter.mode_computer.set_targets( Quaternion(packet.q[0],packet.q[1],packet.q[2],packet.q[3]),
-            packet.thrust, use_yaw_rate, packet.body_yaw_rate );
+            raw_thrust, use_yaw_rate, packet.body_yaw_rate );
 
         break;
     }
