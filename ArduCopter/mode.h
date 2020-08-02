@@ -1521,5 +1521,6 @@ private:
 
     // controls which controller is run (pos or vel):
     //GuidedMode guided_mode = Guided_TakeOff;
-
+    void print_throttle_debug_msgs(const float&, const float&, const float&);
+    int16_t _debug_counter;
 };

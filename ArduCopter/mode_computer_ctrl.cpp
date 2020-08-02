@@ -65,6 +65,8 @@ bool ModeComputer::init( bool ignore_checks )
   computer_cmd_state.yaw_rate_cmd = 0.0;
   computer_cmd_state.use_yaw_rate = true;
   
+  // debug prints
+  _debug_counter = 0;
   // return true if no problems so far.
   return true;
 }
@@ -75,6 +77,7 @@ void ModeComputer::run()
   // defer to another run function .. because, I'll think about it later
   // -- can add case/switch here if needed.
   ModeComputer::computer_control_run();
+
 }
 
 void ModeComputer::computer_control_run()
@@ -121,6 +124,8 @@ void ModeComputer::computer_control_run()
   
   // use throttle value directly from computer
   float collective_in = computer_cmd_state.collective_cmd;
+  float lmax = motors->get_lift_max();
+  float collective_in_scaled = constrain_float( collective_in/lmax, 0.01, 0.85 );
   
   // check for timeout - set lean angles and climb rate to zero if no updates
   uint32_t tnow = millis();
@@ -147,6 +152,18 @@ void ModeComputer::computer_control_run()
   // do thrust control, do not compensate for tilt, and apply standard filter len.
   // "g" is a variable inside Mode class, of type Parameters. Fantastic choice of
   // a name for a variable to grep. :)
-  attitude_control->set_throttle_out( collective_in, false, g.throttle_filt );
+  attitude_control->set_throttle_out( collective_in_scaled, false, g.throttle_filt );
+  print_throttle_debug_msgs( lmax, collective_in, collective_in_scaled );
 }
 
+void ModeComputer::print_throttle_debug_msgs( const float &l, const float &c, const float &cs )
+{
+  // send low rate debug data to gcs. Suppress if not needed.
+    _debug_counter++;
+  if( _debug_counter > 100 )
+  {
+    _debug_counter = 0;
+    gcs().send_text( MAV_SEVERITY_CRITICAL, "lmax: %0.3f\tcmd_t: %0.3f\tadj_t:%0.3f",
+                                             l, c, cs );
+  }
+}
