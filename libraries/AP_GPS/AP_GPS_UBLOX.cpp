@@ -1383,6 +1383,25 @@ AP_GPS_UBLOX::_parse_gps(void)
                 state.have_gps_yaw = false;
                 state.have_gps_yaw_accuracy = false;
             }
+           
+            //report rtk baseline distances from the rover
+            uint32_t nedvalid_mask = static_cast<uint32_t>(RELPOSNED::relPosValid) |
+                                     static_cast<uint32_t>(RELPOSNED::gnssFixOK);
+            if( _buffer.relposned.flags & nedvalid_mask )
+            {
+              // relposN is in cm, relposHPN is in 10*mm
+              state.rtk_baseline_x_mm = (_buffer.relposned.relPosN + _buffer.relposned.relPosHPN*0.01)*10;
+              state.rtk_baseline_y_mm = (_buffer.relposned.relPosE + _buffer.relposned.relPosHPE*0.01)*10;
+              state.rtk_baseline_z_mm = (_buffer.relposned.relPosD + _buffer.relposned.relPosHPD*0.01)*10;
+
+              // also add other status info available
+              state.rtk_baseline_coords_type = 1; // 0: ECEF, 1: NED
+              // 3D accuracy as eucledean norm, in mm.
+              state.rtk_accuracy = safe_sqrt( _buffer.relposned.accN*0.1f * _buffer.relposned.accN*0.1f +
+                                         _buffer.relposned.accE*0.1f * _buffer.relposned.accE*0.1f +
+                                         _buffer.relposned.accD*0.1f * _buffer.relposned.accD*0.1f );
+              
+            }
         }
         break;
     case MSG_PVT:
