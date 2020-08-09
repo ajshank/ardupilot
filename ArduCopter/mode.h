@@ -1493,8 +1493,7 @@ class ModeComputer : public Mode {
 
 public:
     // inherit constructor
-    using Copter::Mode::Mode;
-
+    using Mode::Mode;
 
     bool requires_GPS() const override { return false; }
     bool has_manual_throttle() const override { return false; }
