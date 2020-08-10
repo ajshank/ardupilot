@@ -1716,6 +1716,24 @@ class AutoTestCopter(AutoTest):
     def fly_autotune_switch(self):
         """Test autotune on a switch with gains being saved"""
 
+        self.context_push()
+
+        ex = None
+
+        try:
+            self.fly_autotune_switch_body()
+        except Exception as e:
+            self.progress("Exception caught: %s" % (
+                self.get_exception_stacktrace(e)))
+            ex = e
+
+        self.context_pop()
+        self.reboot_sitl()
+
+        if ex is not None:
+            raise ex
+
+    def fly_autotune_switch_body(self):
         self.set_parameter("RC8_OPTION", 17)
         self.set_parameter("ATC_RAT_RLL_FLTT", 20)
         rlld = self.get_parameter("ATC_RAT_RLL_D")
@@ -3841,49 +3859,55 @@ class AutoTestCopter(AutoTest):
         self.context_push()
 
         ex = None
-        try:
-            self.set_rc_default()
-            self.set_parameter("AHRS_EKF_TYPE", 10)
-            self.set_parameter("INS_LOG_BAT_MASK", 3)
-            self.set_parameter("INS_LOG_BAT_OPT", 0)
-            # set the gyro filter high so we can observe behaviour
-            self.set_parameter("INS_GYRO_FILTER", 100)
-            self.set_parameter("LOG_BITMASK", 958)
-            self.set_parameter("LOG_DISARMED", 0)
-            self.set_parameter("SIM_VIB_MOT_MAX", 350)
-            self.set_parameter("SIM_GYR_RND", 20)
-            self.reboot_sitl()
+        # we are dealing with probabalistic scenarios involving threads, have two bites at the cherry
+        for loop in ["first", "second"]:
+            try:
+                self.set_rc_default()
+                self.set_parameter("AHRS_EKF_TYPE", 10)
+                self.set_parameter("INS_LOG_BAT_MASK", 3)
+                self.set_parameter("INS_LOG_BAT_OPT", 0)
+                # set the gyro filter high so we can observe behaviour
+                self.set_parameter("INS_GYRO_FILTER", 100)
+                self.set_parameter("LOG_BITMASK", 958)
+                self.set_parameter("LOG_DISARMED", 0)
+                self.set_parameter("SIM_VIB_MOT_MAX", 350)
+                self.set_parameter("SIM_GYR_RND", 20)
+                self.reboot_sitl()
 
-            self.takeoff(10, mode="ALT_HOLD")
+                self.takeoff(10, mode="ALT_HOLD")
 
-            # find a motor peak
-            freq, vfr_hud, peakdb = self.hover_and_check_matched_frequency_with_fft(-15, 200, 300)
+                # find a motor peak
+                freq, vfr_hud, peakdb = self.hover_and_check_matched_frequency_with_fft(-15, 200, 300)
 
-            # now add a dynamic notch and check that the peak is squashed
-            self.set_parameter("INS_LOG_BAT_OPT", 2)
-            self.set_parameter("INS_HNTCH_ENABLE", 1)
-            self.set_parameter("INS_HNTCH_FREQ", freq)
-            self.set_parameter("INS_HNTCH_REF", vfr_hud.throttle/100.)
-            # first and third harmonic
-            self.set_parameter("INS_HNTCH_HMNCS", 5)
-            self.set_parameter("INS_HNTCH_ATT", 50)
-            self.set_parameter("INS_HNTCH_BW", freq/2)
-            self.reboot_sitl()
+                # now add a dynamic notch and check that the peak is squashed
+                self.set_parameter("INS_LOG_BAT_OPT", 2)
+                self.set_parameter("INS_HNTCH_ENABLE", 1)
+                self.set_parameter("INS_HNTCH_FREQ", freq)
+                self.set_parameter("INS_HNTCH_REF", vfr_hud.throttle/100.)
+                # first and third harmonic
+                self.set_parameter("INS_HNTCH_HMNCS", 5)
+                self.set_parameter("INS_HNTCH_ATT", 50)
+                self.set_parameter("INS_HNTCH_BW", freq/2)
+                self.reboot_sitl()
 
-            freq, vfr_hud, peakdb1 = self.hover_and_check_matched_frequency_with_fft(-10, 20, 350, reverse=True)
+                freq, vfr_hud, peakdb1 = self.hover_and_check_matched_frequency_with_fft(-10, 20, 350, reverse=True)
 
-            # now add double dynamic notches and check that the peak is squashed
-            self.set_parameter("INS_HNTCH_OPTS", 1)
-            self.reboot_sitl()
+                # now add double dynamic notches and check that the peak is squashed
+                self.set_parameter("INS_HNTCH_OPTS", 1)
+                self.reboot_sitl()
 
-            freq, vfr_hud, peakdb2 = self.hover_and_check_matched_frequency_with_fft(-15, 20, 350, reverse=True)
+                freq, vfr_hud, peakdb2 = self.hover_and_check_matched_frequency_with_fft(-15, 20, 350, reverse=True)
 
-            # double-notch should do better
-            if peakdb2 > peakdb1:
-                raise NotAchievedException("Double-notch peak was higher than single-notch peak %fdB < %fdB" % (peakdb2, peakdb1))
+                # double-notch should do better, but check for within 5%
+                if peakdb2 * 1.05 > peakdb1:
+                    raise NotAchievedException("Double-notch peak was higher than single-notch peak %fdB > %fdB" % (peakdb2, peakdb1))
 
-        except Exception as e:
-            ex = e
+            except Exception as e:
+                self.progress("Exception caught in %s loop: %s" % (loop, self.get_exception_stacktrace(e)))
+                if loop != "second":
+                    continue
+                ex = e
+            break
 
         self.context_pop()
 
@@ -4052,7 +4076,9 @@ class AutoTestCopter(AutoTest):
                 self.set_parameter("INS_HNTCH_OPTS", 3)
                 self.reboot_sitl()
 
-                self.hover_and_check_matched_frequency_with_fft(-1, 100, 350, reverse=True)
+                # 5db is far in excess of the attenuation that the double dynamic-harmonic notch is able
+                # to provide (-7dB on average), but without the notch the peak is around 20dB so still a safe test
+                self.hover_and_check_matched_frequency_with_fft(5, 100, 350, reverse=True)
 
                 self.set_parameter("SIM_VIB_FREQ_X", 0)
                 self.set_parameter("SIM_VIB_FREQ_Y", 0)
@@ -4955,6 +4981,21 @@ class AutoTestCopter(AutoTest):
 
         self.fly_rangefinder_mavlink()
 
+    def fly_ship_takeoff(self):
+        # test ship takeoff
+        self.wait_groundspeed(0, 2)
+        self.set_parameter("SIM_SHIP_ENABLE", 1)
+        self.set_parameter("SIM_SHIP_SPEED", 10)
+        self.set_parameter("SIM_SHIP_DSIZE", 2)
+        self.wait_ready_to_arm()
+        # we should be moving with the ship
+        self.wait_groundspeed(9, 11)
+        self.takeoff(10)
+        # above ship our speed drops to 0
+        self.wait_groundspeed(0, 2)
+        self.land_and_disarm()
+        # ship will have moved on, so we land on the water which isn't moving
+        self.wait_groundspeed(0, 2)
 
     def test_parameter_validation(self):
         self.progress("invalid; min must be less than max:")
@@ -5155,6 +5196,10 @@ class AutoTestCopter(AutoTest):
              "Test Buttons",
              self.test_button),
 
+            ("ShipTakeoff",
+             "Fly Simulated Ship Takeoff",
+             self.fly_ship_takeoff),
+
             ("RangeFinder",
              "Test RangeFinder Basic Functionality",
              self.test_rangefinder),
@@ -5238,6 +5283,10 @@ class AutoTestCopter(AutoTest):
             ("SITLCompassCalibration",
              "Test SITL onboard compass calibration",
              self.test_mag_calibration),
+
+            ("CRSF",
+             "Test RC CRSF",
+             self.test_crsf),
 
             ("LogUpload",
              "Log upload",

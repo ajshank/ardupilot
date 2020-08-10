@@ -307,7 +307,7 @@ bool Copter::set_mode(const uint8_t new_mode, const ModeReason reason)
         return false;
     }
 #endif
-    return copter.set_mode(static_cast<Mode::Number>(new_mode), ModeReason::GCS_COMMAND);
+    return copter.set_mode(static_cast<Mode::Number>(new_mode), reason);
 }
 
 // update_flight_mode - calls the appropriate attitude controllers based on flight mode
@@ -366,6 +366,12 @@ void Copter::exit_mode(Mode *&old_flightmode,
 #if MODE_ZIGZAG_ENABLED == ENABLED
     if (old_flightmode == &mode_zigzag) {
         mode_zigzag.exit();
+    }
+#endif
+
+#if MODE_ACRO_ENABLED == ENABLED
+    if (old_flightmode == &mode_acro) {
+        mode_acro.exit();
     }
 #endif
 

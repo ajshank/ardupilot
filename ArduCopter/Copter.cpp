@@ -91,7 +91,7 @@ const AP_HAL::HAL& hal = AP_HAL::get_HAL();
 const AP_Scheduler::Task Copter::scheduler_tasks[] = {
     SCHED_TASK(rc_loop,              100,    130),
     SCHED_TASK(throttle_loop,         50,     75),
-    SCHED_TASK(update_GPS,            50,    200),
+    SCHED_TASK_CLASS(AP_GPS, &copter.gps, update, 50, 200),
 #if OPTFLOW == ENABLED
     SCHED_TASK_CLASS(OpticalFlow,          &copter.optflow,             update,         200, 160),
 #endif
@@ -150,7 +150,7 @@ const AP_Scheduler::Task Copter::scheduler_tasks[] = {
     SCHED_TASK_CLASS(AP_Mount,             &copter.camera_mount,        update,          50,  75),
 #endif
 #if CAMERA == ENABLED
-    SCHED_TASK_CLASS(AP_Camera,            &copter.camera,              update_trigger,  50,  75),
+    SCHED_TASK_CLASS(AP_Camera,            &copter.camera,              update,          50,  75),
 #endif
 #if LOGGING_ENABLED == ENABLED
     SCHED_TASK(ten_hz_logging_loop,   10,    350),
@@ -322,7 +322,7 @@ bool Copter::set_target_angle_and_climbrate(float roll_deg, float pitch_deg, flo
     Quaternion q;
     q.from_euler(radians(roll_deg),radians(pitch_deg),radians(yaw_deg));
 
-    mode_guided.set_angle(q,climb_rate_ms*100,use_yaw_rate,radians(yaw_rate_degs));
+    mode_guided.set_angle(q, climb_rate_ms*100, use_yaw_rate, radians(yaw_rate_degs), false);
     return true;
 }
 
@@ -513,30 +513,6 @@ void Copter::one_hz_loop()
 #endif
 
     AP_Notify::flags.flying = !ap.land_complete;
-}
-
-// called at 50hz
-void Copter::update_GPS(void)
-{
-    static uint32_t last_gps_reading[GPS_MAX_INSTANCES];   // time of last gps message
-    bool gps_updated = false;
-
-    gps.update();
-
-    // log after every gps message
-    for (uint8_t i=0; i<gps.num_sensors(); i++) {
-        if (gps.last_message_time_ms(i) != last_gps_reading[i]) {
-            last_gps_reading[i] = gps.last_message_time_ms(i);
-            gps_updated = true;
-            break;
-        }
-    }
-
-    if (gps_updated) {
-#if CAMERA == ENABLED
-        camera.update();
-#endif
-    }
 }
 
 void Copter::init_simple_bearing()

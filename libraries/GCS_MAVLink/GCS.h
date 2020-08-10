@@ -236,7 +236,7 @@ public:
     void send_rc_channels_raw() const;
     void send_raw_imu();
 
-    void send_scaled_pressure_instance(uint8_t instance, void (*send_fn)(mavlink_channel_t chan, uint32_t time_boot_ms, float press_abs, float press_diff, int16_t temperature));
+    void send_scaled_pressure_instance(uint8_t instance, void (*send_fn)(mavlink_channel_t chan, uint32_t time_boot_ms, float press_abs, float press_diff, int16_t temperature, int16_t temperature_press_diff));
     void send_scaled_pressure();
     void send_scaled_pressure2();
     virtual void send_scaled_pressure3(); // allow sub to override this
@@ -510,6 +510,12 @@ protected:
     virtual bool allow_disarm() const { return true; }
 
     void manual_override(RC_Channel *c, int16_t value_in, uint16_t offset, float scaler, const uint32_t tnow, bool reversed = false);
+
+    /*
+      correct an offboard timestamp in microseconds to a local time
+      since boot in milliseconds
+     */
+    uint32_t correct_offboard_timestamp_usec_to_ms(uint64_t offboard_usec, uint16_t payload_size);
 
 private:
 
@@ -790,12 +796,6 @@ private:
     void handle_vision_speed_estimate(const mavlink_message_t &msg);
 
     void lock_channel(const mavlink_channel_t chan, bool lock);
-
-    /*
-      correct an offboard timestamp in microseconds to a local time
-      since boot in milliseconds
-     */
-    uint32_t correct_offboard_timestamp_usec_to_ms(uint64_t offboard_usec, uint16_t payload_size);
 
     mavlink_signing_t signing;
     static mavlink_signing_streams_t signing_streams;

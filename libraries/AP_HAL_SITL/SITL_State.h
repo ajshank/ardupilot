@@ -41,6 +41,7 @@
 #include <SITL/SIM_RF_GYUS42v2.h>
 
 #include <SITL/SIM_Frsky_D.h>
+#include <SITL/SIM_CRSF.h>
 // #include <SITL/SIM_Frsky_SPort.h>
 // #include <SITL/SIM_Frsky_SPortPassthrough.h>
 #include <SITL/SIM_PS_RPLidarA2.h>
@@ -186,9 +187,6 @@ private:
     AP_InertialSensor *_ins;
     Scheduler *_scheduler;
     Compass *_compass;
-#if AP_TERRAIN_AVAILABLE
-    AP_Terrain *_terrain;
-#endif
 
     SocketAPM _sitl_rc_in{true};
     SITL::SITL *_sitl;
@@ -283,6 +281,9 @@ private:
     // SITL::Frsky_SPortPassthrough *frsky_sportpassthrough;
     // simulated NMEA rangefinder:
     SITL::PS_RPLidarA2 *rplidara2;
+
+    // simulated CRSF devices
+    SITL::CRSF *crsf;
 
     // output socket for flightgear viewing
     SocketAPM fg_socket{true};

@@ -112,8 +112,9 @@ bool AP_Generator_RichenPower::get_reading()
 
     // calculate checksum....
     uint16_t checksum = 0;
+    const uint8_t *checksum_buffer = &u.parse_buffer[2];
     for (uint8_t i=0; i<5; i++) {
-        checksum += be16toh(checksum_buffer[i]);
+        checksum += be16toh_ptr(&checksum_buffer[2*i]);
     }
 
     if (checksum != be16toh(u.packet.checksum)) {
@@ -373,7 +374,9 @@ void AP_Generator_RichenPower::send_generator_status(const GCS_MAVLINK &channel)
         last_reading.output_voltage, // bus_voltage; Voltage of the bus seen at the generator
         INT16_MAX, // rectifier_temperature
         std::numeric_limits<double>::quiet_NaN(), // bat_current_setpoint; The target battery current
-        INT16_MAX // generator temperature
+        INT16_MAX, // generator temperature
+        UINT32_MAX, // seconds this generator has run since it was rebooted
+        INT32_MAX // seconds until this generator requires maintenance
         );
 }
 

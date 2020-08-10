@@ -101,7 +101,7 @@ public:
     }
 
     // return desired forward throttle percentage
-    int8_t forward_throttle_pct(void);        
+    int8_t forward_throttle_pct();
     float get_weathervane_yaw_rate_cds(void);
 
     // see if we are flying from vtol point of view
@@ -336,6 +336,10 @@ private:
     // manual throttle curve expo strength
     AP_Float throttle_expo;
 
+    // manual forward throttle input
+    AP_Float fwd_thr_max;
+    RC_Channel *rc_fwd_thr_ch;
+
     // QACRO mode max roll/pitch/yaw rates
     AP_Float acro_roll_rate;
     AP_Float acro_pitch_rate;
@@ -550,6 +554,8 @@ private:
         OPTION_MISSION_LAND_FW_APPROACH=(1<<4),
         OPTION_FS_QRTL=(1<<5),
         OPTION_IDLE_GOV_MANUAL=(1<<6),
+        OPTION_Q_ASSIST_FORCE_ENABLE=(1<<7),
+        OPTION_TAILSIT_Q_ASSIST_MOTORS_ONLY=(1<<8),
     };
 
     AP_Float takeoff_failure_scalar;

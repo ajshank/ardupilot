@@ -182,9 +182,13 @@ public:
         Q_ASSIST =            82, // disable, enable and force Q assist
         ZIGZAG_Auto =         83, // zigzag auto switch
         AIRMODE =             84, // enable / disable airmode for copter
+        GENERATOR   =         85, // generator control
+        TER_DISABLE =         86, // disable terrain following in CRUISE/FBWB modes
+        CROW_SELECT =         87, // select CROW mode for diff spoilers;high disables,mid forces progressive
+        SOARING =             88, // three-position switch to set soaring mode
+
         // entries from 100 onwards are expected to be developer
         // options used for testing
-        GENERATOR   =         85, // generator control
         KILL_IMU1 =          100, // disable first IMU (for IMU failure testing)
         KILL_IMU2 =          101, // disable second IMU (for IMU failure testing)
         CAM_MODE_TOGGLE =    102, // Momentary switch to cycle camera modes
@@ -197,6 +201,17 @@ public:
         // inputs from 200 will eventually used to replace RCMAP
         MAINSAIL =           207, // mainsail input
         FLAP =               208, // flap input
+        FWD_THR =            209, // VTOL manual forward throttle
+
+        // inputs for the use of onboard lua scripting
+        SCRIPTING_1 =        300,
+        SCRIPTING_2 =        301,
+        SCRIPTING_3 =        302,
+        SCRIPTING_4 =        303,
+        SCRIPTING_5 =        304,
+        SCRIPTING_6 =        305,
+        SCRIPTING_7 =        306,
+        SCRIPTING_8 =        307,
     };
     typedef enum AUX_FUNC aux_func_t;
 

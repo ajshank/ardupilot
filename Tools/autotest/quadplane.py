@@ -396,6 +396,11 @@ class AutoTestQuadPlane(AutoTest):
     def test_parameter_checks(self):
         self.test_parameter_checks_poscontrol("Q_P")
 
+    def rc_defaults(self):
+        ret = super(AutoTestQuadPlane, self).rc_defaults()
+        ret[3] = 1000
+        return ret
+
     def default_mode(self):
         return "MANUAL"
 
@@ -456,10 +461,10 @@ class AutoTestQuadPlane(AutoTest):
         self.set_rc(1, 1000)
         self.wait_roll(-65, 5)
         self.progress("Killing servo outputs to force qassist to help")
-        self.set_parameter("SERVO1_MIN", 1500)
-        self.set_parameter("SERVO1_MAX", 1500)
-        self.set_parameter("SERVO1_TRIM", 1500)
-        self.progress("Trying ot roll over hard the other way")
+        self.set_parameter("SERVO1_MIN", 1480)
+        self.set_parameter("SERVO1_MAX", 1480)
+        self.set_parameter("SERVO1_TRIM", 1480)
+        self.progress("Trying to roll over hard the other way")
         self.set_rc(1, 2000)
         self.progress("Waiting for qassist (angle) to kick in")
         self.wait_servo_channel_value(5, 1100, timeout=30, comparator=operator.gt)
@@ -498,6 +503,10 @@ class AutoTestQuadPlane(AutoTest):
              self.test_qassist),
 
             ("GyroFFT", "Fly Gyro FFT",
-             self.fly_gyro_fft)
+             self.fly_gyro_fft),
+
+            ("LogUpload",
+             "Log upload",
+             self.log_upload),
         ])
         return ret

@@ -785,6 +785,10 @@ private:
     // soaring mode-change timer
     uint32_t soaring_mode_timer;
 
+    // terrain disable for non AUTO modes, set with an RC Option switch
+    bool non_auto_terrain_disable;
+    bool terrain_disabled();
+
     // Attitude.cpp
     void adjust_nav_pitch_throttle(void);
     void update_load_factor(void);
@@ -1105,6 +1109,14 @@ private:
     bool ekf_over_threshold();
     void failsafe_ekf_event();
     void failsafe_ekf_off_event(void);
+    
+    enum class CrowMode {
+        NORMAL,
+        PROGRESSIVE,
+        CROW_DISABLED,
+    };
+
+    CrowMode crow_mode = CrowMode::NORMAL;
 
 public:
     void failsafe_check(void);

@@ -264,12 +264,21 @@ public:
         LIMITED = 2,
     };
 
+    enum class AcroOptions {
+        AIR_MODE = 1 << 0,
+        RATE_LOOP_ONLY = 1 << 1,
+    };
+
     virtual void run() override;
 
     bool requires_GPS() const override { return false; }
     bool has_manual_throttle() const override { return true; }
     bool allows_arming(bool from_gcs) const override { return true; };
     bool is_autopilot() const override { return false; }
+    bool init(bool ignore_checks) override;
+    void exit();
+    // whether an air-mode aux switch has been toggled
+    void air_mode_aux_changed();
 
 protected:
 
@@ -281,7 +290,7 @@ protected:
     float throttle_hover() const override;
 
 private:
-
+    bool disable_air_mode_reset;
 };
 #endif
 
@@ -781,7 +790,7 @@ public:
 
     bool requires_terrain_failsafe() const override { return true; }
 
-    void set_angle(const Quaternion &q, float climb_rate_cms, bool use_yaw_rate, float yaw_rate_rads);
+    void set_angle(const Quaternion &q, float climb_rate_cms_or_thrust, bool use_yaw_rate, float yaw_rate_rads, bool use_thrust);
     bool set_destination(const Vector3f& destination, bool use_yaw = false, float yaw_cd = 0.0, bool use_yaw_rate = false, float yaw_rate_cds = 0.0, bool yaw_relative = false, bool terrain_alt = false);
     bool set_destination(const Location& dest_loc, bool use_yaw = false, float yaw_cd = 0.0, bool use_yaw_rate = false, float yaw_rate_cds = 0.0, bool yaw_relative = false);
     bool get_wp(Location &loc) override;

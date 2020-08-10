@@ -77,9 +77,6 @@ void SITL_State::_sitl_setup(const char *home_str)
     _barometer = AP_Baro::get_singleton();
     _ins = AP_InertialSensor::get_singleton();
     _compass = Compass::get_singleton();
-#if AP_TERRAIN_AVAILABLE
-    _terrain = reinterpret_cast<AP_Terrain *>(AP_Param::find_object("TERRAIN_"));
-#endif
 
     if (_sitl != nullptr) {
         // setup some initial values
@@ -181,8 +178,7 @@ void SITL_State::_fdm_input_step(void)
         _update_gps(_sitl->state.latitude, _sitl->state.longitude,
                     _sitl->state.altitude,
                     _sitl->state.speedN, _sitl->state.speedE, _sitl->state.speedD,
-                    _sitl->state.yawDeg,
-                    !_sitl->gps_disable);
+                    _sitl->state.yawDeg, true);
         _update_airspeed(_sitl->state.airspeed);
         _update_rangefinder(_sitl->state.range);
 
@@ -342,6 +338,12 @@ int SITL_State::sim_fd(const char *name, const char *arg)
     //     }
     //     frsky_sport = new SITL::Frsky_SPortPassthrough();
     //     return frsky_sportpassthrough->fd();
+    } else if (streq(name, "crsf")) {
+        if (crsf != nullptr) {
+            AP_HAL::panic("Only one crsf at a time");
+        }
+        crsf = new SITL::CRSF();
+        return crsf->fd();
     } else if (streq(name, "rplidara2")) {
         if (rplidara2 != nullptr) {
             AP_HAL::panic("Only one rplidara2 at a time");
@@ -443,6 +445,11 @@ int SITL_State::sim_fd_write(const char *name)
             AP_HAL::panic("No frsky-d created");
         }
         return frsky_d->write_fd();
+    } else if (streq(name, "crsf")) {
+        if (crsf == nullptr) {
+            AP_HAL::panic("No crsf created");
+        }
+        return crsf->write_fd();
     } else if (streq(name, "rplidara2")) {
         if (rplidara2 == nullptr) {
             AP_HAL::panic("No rplidara2 created");
@@ -648,6 +655,11 @@ void SITL_State::_fdm_input_local(void)
     // if (frsky_sportpassthrough != nullptr) {
     //     frsky_sportpassthrough->update();
     // }
+
+    if (crsf != nullptr) {
+        crsf->update();
+    }
+
     if (rplidara2 != nullptr) {
         rplidara2->update(sitl_model->get_location());
     }
@@ -876,8 +888,7 @@ void SITL_State::set_height_agl(void)
     }
 
 #if AP_TERRAIN_AVAILABLE
-    if (_terrain != nullptr &&
-        _sitl != nullptr &&
+    if (_sitl != nullptr &&
         _sitl->terrain_enable) {
         // get height above terrain from AP_Terrain. This assumes
         // AP_Terrain is working
@@ -886,7 +897,9 @@ void SITL_State::set_height_agl(void)
         location.lat = _sitl->state.latitude*1.0e7;
         location.lng = _sitl->state.longitude*1.0e7;
 
-        if (_terrain->height_amsl(location, terrain_height_amsl, false)) {
+        AP_Terrain *_terrain = AP_Terrain::get_singleton();
+        if (_terrain != nullptr &&
+            _terrain->height_amsl(location, terrain_height_amsl, false)) {
             _sitl->height_agl = _sitl->state.altitude - terrain_height_amsl;
             return;
         }
