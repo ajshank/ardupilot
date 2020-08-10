@@ -22,7 +22,7 @@ struct {
 } static computer_cmd_state;
 
 // function for Mavlink to set the targets. Check GCSMavlink file.
-void Copter::ModeComputer::set_targets( const Quaternion &q, float collective,
+void ModeComputer::set_targets( const Quaternion &q, float collective,
                                        bool use_yaw_rate, float yaw_rate_rads )
 {
   // copy over the values into the "global" struct declared in this file
@@ -41,7 +41,7 @@ void Copter::ModeComputer::set_targets( const Quaternion &q, float collective,
 }                                       
 
 // init function is only called once when mode is switched
-bool Copter::ModeComputer::init( bool ignore_checks )
+bool ModeComputer::init( bool ignore_checks )
 {
   // allow attitude commands to be accepted
   // Mavlink should have already called set_targets function for this mode
@@ -70,17 +70,17 @@ bool Copter::ModeComputer::init( bool ignore_checks )
 }
 
 // run function is called at whatever low-level mode control frequency is (400?)
-void Copter::ModeComputer::run()
+void ModeComputer::run()
 {
   // defer to another run function .. because, I'll think about it later
   // -- can add case/switch here if needed.
   ModeComputer::computer_control_run();
 }
 
-void Copter::ModeComputer::computer_control_run()
+void ModeComputer::computer_control_run()
 {
-  if( !motors->armed() || !ap.auto_armed || !motors->get_interlock() ||
-      (ap.land_complete) )
+  if( !motors->armed() || !copter.ap.auto_armed || !motors->get_interlock() ||
+      (copter.ap.land_complete) )
   {
     #if FRAME_CONFIG == HELI_FRAME
       attitude_control->set_yaw_target_to_current_heading();
@@ -136,7 +136,7 @@ void Copter::ModeComputer::computer_control_run()
     return;
   }
   
-  motors->set_desired_spool_state(AP_Motors::DESIRED_THROTTLE_UNLIMITED);
+  motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
 
   // call attitude controller
   attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(roll_in, pitch_in, yaw_rate_in);
