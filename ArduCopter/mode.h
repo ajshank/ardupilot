@@ -1504,7 +1504,8 @@ public:
     bool in_guided_mode() const override { return true; }
     bool has_user_takeoff(bool must_navigate) const override { return true; }
 
-    void set_targets(const Quaternion &q, float collective, bool use_yaw_rate, float yaw_rate_rads);
+    void set_targets(const Quaternion &q, float &collective, bool &use_yaw_rate, float &yaw_cmd_rads,
+                     bool &comp_initialisation_errs );
 
     void limit_clear();
     void limit_init_time_and_pos();
@@ -1522,14 +1523,8 @@ protected:
     const char *name() const override { return "COMP_CTRL"; }
     const char *name4() const override { return "CCTL"; }
 
-    //uint32_t wp_distance() const override;
-    //int32_t wp_bearing() const override;
-    //float crosstrack_error() const override;
-
 private:
 
-    // controls which controller is run (pos or vel):
-    //GuidedMode guided_mode = Guided_TakeOff;
-    void print_throttle_debug_msgs(const float&, const float&, const float&);
+    void print_debug_msgs(const float&, const float&, const float&);
     int16_t _debug_counter;
 };

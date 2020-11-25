@@ -22,8 +22,9 @@ struct {
 } static computer_cmd_state;
 
 // function for Mavlink to set the targets. Check GCSMavlink file.
-void ModeComputer::set_targets( const Quaternion &q, float collective,
-                                       bool use_yaw_rate, float yaw_rate_rads )
+void ModeComputer::set_targets( const Quaternion &q, float &collective,
+                                bool &use_yaw_rate, float &yaw_cmd_rads,
+                                bool &comp_initialisation_errs )
 {
   // copy over the values into the "global" struct declared in this file
   // @TODO: can avoid all this by calling attitude_control's input_quaternion(..)
@@ -33,11 +34,20 @@ void ModeComputer::set_targets( const Quaternion &q, float collective,
   computer_cmd_state.roll_cmd = ToDeg( computer_cmd_state.roll_cmd ) * 100.0f;
   computer_cmd_state.pitch_cmd = ToDeg( computer_cmd_state.pitch_cmd ) * 100.0f;
   computer_cmd_state.collective_cmd = collective;
-  // intentionally prohibit yaw control - we only want yaw rate:
-  // computer_cmd_state.yaw_cmd = ToDeg( computer_cmd_state.yaw_cmd ) * 100.0f;
-  computer_cmd_state.yaw_rate_cmd = ToDeg( yaw_rate_rads ) * 100.0f;
+  // support both yaw and yawrate control styles, select in run function:
+  computer_cmd_state.yaw_cmd = ToDeg( yaw_cmd_rads ) * 100.0f;
+  computer_cmd_state.yaw_rate_cmd = ToDeg( yaw_cmd_rads ) * 100.0f;
   computer_cmd_state.use_yaw_rate = use_yaw_rate;
   computer_cmd_state.update_time_ms = millis();
+  
+  // see if Mavlink has received error reports from Nimbus
+  _debug_counter = _debug_counter > 1000 ? 0 : _debug_counter+1;
+  if( comp_initialisation_errs && _debug_counter > 50 )
+  {
+    AP_Notify::play_tune("MFT240L8 L2O1aO2dc");
+    gcs().send_text( MAV_SEVERITY_CRITICAL, "Nimbus errors!" );
+    _debug_counter = 0;
+  }
 }                                       
 
 // init function is only called once when mode is switched
@@ -67,7 +77,6 @@ bool ModeComputer::init( bool ignore_checks )
   
   // debug prints
   _debug_counter = 0;
-  // return true if no problems so far.
   return true;
 }
 
@@ -104,8 +113,8 @@ void ModeComputer::computer_control_run()
     pitch_in *= ratio;
   }
 
-  // wrap yaw. Note that yaw command is not enabled in this mode
-  // float yaw_in = wrap_180_cd( computer_cmd_state.yaw_cmd) ;
+  // wrap yaw and yawrate
+  float yaw_in = wrap_180_cd( computer_cmd_state.yaw_cmd ) ;
   float yaw_rate_in = wrap_180_cd( computer_cmd_state.yaw_rate_cmd );
   
   /*
@@ -124,6 +133,7 @@ void ModeComputer::computer_control_run()
   
   // use throttle value directly from computer
   float collective_in = computer_cmd_state.collective_cmd;
+  // scale for battery lift_max 
   float lmax = motors->get_lift_max();
   float collective_in_scaled = constrain_float( collective_in/lmax, 0.01, 0.85 );
   
@@ -144,19 +154,21 @@ void ModeComputer::computer_control_run()
   motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
 
   // call attitude controller
-  attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(roll_in, pitch_in, yaw_rate_in);
+  if( computer_cmd_state.use_yaw_rate )
+    attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(roll_in, pitch_in, yaw_rate_in);
+  else
+    attitude_control->input_euler_angle_roll_pitch_yaw(roll_in, pitch_in, yaw_in, true);
 
-  // Controlling yaw is not allowed in this mode:
-  //attitude_control->input_euler_angle_roll_pitch_yaw(roll_in, pitch_in, yaw_in, true);
-  
   // do thrust control, do not compensate for tilt, and apply standard filter len.
   // "g" is a variable inside Mode class, of type Parameters. Fantastic choice of
   // a name for a variable to grep. :)
   attitude_control->set_throttle_out( collective_in_scaled, false, g.throttle_filt );
-  print_throttle_debug_msgs( lmax, collective_in, collective_in_scaled );
+  
+  // can print debug msgs on mavlink -- avoid using this outside of testing.
+  //print_debug_msgs( lmax, collective_in, collective_in_scaled );
 }
 
-void ModeComputer::print_throttle_debug_msgs( const float &l, const float &c, const float &cs )
+void ModeComputer::print_debug_msgs( const float &l, const float &c, const float &cs )
 {
   // send low rate debug data to gcs. Suppress if not needed.
     _debug_counter++;
