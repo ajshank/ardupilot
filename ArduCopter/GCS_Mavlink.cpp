@@ -1019,19 +1019,25 @@ void GCS_MAVLINK_Copter::handleMessage(const mavlink_message_t &msg)
         }
 
         // if the body_yaw_rate field is ignored, use the commanded yaw position
-        // otherwise use the commanded yaw rate. Computer mode sends a true mask
-        // for yaw-rate.
+        // otherwise use the commanded yaw rate. Computer sends bitmask.
         bool use_yaw_rate = false;
         if ((packet.type_mask & (1<<2)) == 0) {
             use_yaw_rate = true;
         }
+        
+        // @aj: add buzzer support through reserved bit fields in Mavlink.
+        // Set this bit field to trigger error msgs and buzzer.
+        // !!NOTE!! Can cause conflicts in future, remove if possible.
+        bool comp_initialisation_errs = false;
+        if( (packet.type_mask & (1<<3)) == (1<<3) )
+          comp_initialisation_errs = true;
 
         // guided modes can still function the same
         copter.mode_guided.set_angle(Quaternion(packet.q[0],packet.q[1],packet.q[2],packet.q[3]),
                 climb_rate_or_thrust, use_yaw_rate, packet.body_yaw_rate, use_thrust);
         // @aj: adding functionality for computer control
         copter.mode_computer.set_targets( Quaternion(packet.q[0],packet.q[1],packet.q[2],packet.q[3]),
-            raw_thrust, use_yaw_rate, packet.body_yaw_rate );
+            raw_thrust, use_yaw_rate, packet.body_yaw_rate, comp_initialisation_errs );
 
         break;
     }

@@ -65,6 +65,8 @@
 #include <AC_AutoTune/AC_AutoTune.h>
 #include <AP_Parachute/AP_Parachute.h>
 #include <AC_Sprayer/AC_Sprayer.h>
+#include <AP_Notify/AP_Notify.h>
+#include <AP_Notify/ToneAlarm.h>
 
 // Configuration
 #include "defines.h"
