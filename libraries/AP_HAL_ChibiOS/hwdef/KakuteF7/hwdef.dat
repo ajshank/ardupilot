@@ -138,7 +138,7 @@ BARO BMP280 I2C:0:0x76
 
 define HAL_OS_FATFS_IO 1
 define HAL_BOARD_LOG_DIRECTORY "/APM/LOGS"
-define HAL_BOARD_TERRAIN_DIRECTORY "/APM/TERRAIN"
+# define HAL_BOARD_TERRAIN_DIRECTORY "/APM/TERRAIN"
 
 # setup for OSD
 define OSD_ENABLED 1
@@ -158,6 +158,7 @@ define HAL_SPRAYER_ENABLED 0
 
 # save FLASH, but leave above when flash issue is fixed
 define HAL_MINIMIZE_FEATURES 1
+define TERRAIN_ENABLE 0
 
 
 # reduce max size of embedded params for apj_tool.py
