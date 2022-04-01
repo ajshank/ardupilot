@@ -451,6 +451,7 @@ struct PACKED log_TERRAIN {
     float current_height;
     uint16_t pending;
     uint16_t loaded;
+    float reference_offset;
 };
 
 struct PACKED log_CSRV {
@@ -704,6 +705,31 @@ struct PACKED log_Scripting {
     int32_t run_mem;
 };
 
+struct PACKED log_MotBatt {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    float   lift_max;
+    float   bat_volt;
+    float   th_limit;
+    float th_average_max;
+    uint8_t mot_fail_flags;
+};
+
+struct PACKED log_VER {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    uint8_t board_type;
+    uint16_t board_subtype;
+    uint8_t major;
+    uint8_t minor;
+    uint8_t patch;
+    uint8_t fw_type;
+    uint32_t git_hash;
+    char fw_string[64];
+    uint16_t _APJ_BOARD_ID;
+};
+
+
 // FMT messages define all message formats other than FMT
 // UNIT messages define units which can be referenced by FMTU messages
 // FMTU messages associate types (e.g. centimeters/second/second) to FMT message fields
@@ -744,7 +770,7 @@ struct PACKED log_Scripting {
 // @Field: Offset: Offset from parameter
 // @Field: U: True if sensor is being used
 // @Field: H: True if sensor is healthy
-// @Field: Hfp: Probability sensor has failed
+// @Field: Hp: Probability sensor is healthy
 // @Field: Pri: True if sensor is the primary sensor
 
 // @LoggerMessage: BCN
@@ -954,7 +980,7 @@ struct PACKED log_Scripting {
 // @Field: Name: parameter name
 // @Field: Value: parameter value
 
-// @LoggerMessage: PIDR,PIDP,PIDY,PIDA,PIDS
+// @LoggerMessage: PIDR,PIDP,PIDY,PIDA,PIDS,PIDN,PIDE
 // @Description: Proportional/Integral/Derivative gain values for Roll/Pitch/Yaw/Altitude/Steering
 // @Field: TimeUS: Time since system startup
 // @Field: Tar: desired value
@@ -1046,6 +1072,13 @@ struct PACKED log_Scripting {
 // @Field: Lat: latitude of rally point
 // @Field: Lng: longitude of rally point
 // @Field: Alt: altitude of rally point
+
+// @LoggerMessage: RCI2
+// @Description: (More) RC input channels to vehicle
+// @Field: TimeUS: Time since system startup
+// @Field: C15: channel 15 input
+// @Field: C16: channel 16 input
+// @Field: OMask: bitmask of RC channels being overridden by mavlink input
 
 // @LoggerMessage: RCIN
 // @Description: RC input channels to vehicle
@@ -1139,6 +1172,7 @@ struct PACKED log_Scripting {
 // @Field: CHeight: Vehicle height above terrain
 // @Field: Pending: Number of tile requests outstanding
 // @Field: Loaded: Number of tiles in memory
+// @Field: ROfs: terrain reference offset for arming altitude
 
 // @LoggerMessage: TSYN
 // @Description: Time synchronisation response information
@@ -1228,6 +1262,15 @@ struct PACKED log_Scripting {
 // @Field: Total_mem: total memory useage
 // @Field: Run_mem: run memory usage
 
+// @LoggerMessage: MOTB
+// @Description: Motor mixer information
+// @Field: TimeUS: Time since system startup
+// @Field: LiftMax: Maximum motor compensation gain
+// @Field: BatVolt: Ratio betwen detected battery voltage and maximum battery voltage
+// @Field: ThLimit: Throttle limit set due to battery current limitations
+// @Field: ThrAvMx: Maximum average throttle that can be used to maintain attitude controll, derived from throttle mix params
+// @Field: FailFlags: bit 0 motor failed, bit 1 motors balanced, should be 2 in normal flight
+
 // messages for all boards
 #define LOG_COMMON_STRUCTURES \
     { LOG_FORMAT_MSG, sizeof(log_Format), \
@@ -1262,7 +1305,7 @@ LOG_STRUCTURE_FROM_PRECLAND \
     { LOG_RADIO_MSG, sizeof(log_Radio), \
       "RAD", "QBBBBBHH", "TimeUS,RSSI,RemRSSI,TxBuf,Noise,RemNoise,RxErrors,Fixed", "s-------", "F-------", true }, \
 LOG_STRUCTURE_FROM_CAMERA \
-    { LOG_ARSP_MSG, sizeof(log_ARSP), "ARSP",  "QBffcffBBfB", "TimeUS,I,Airspeed,DiffPress,Temp,RawPress,Offset,U,H,Hfp,Pri", "s#nPOPP----", "F-00B00----", true }, \
+    { LOG_ARSP_MSG, sizeof(log_ARSP), "ARSP",  "QBffcffBBfB", "TimeUS,I,Airspeed,DiffPress,Temp,RawPress,Offset,U,H,Hp,Pri", "s#nPOPP----", "F-00B00----", true }, \
     LOG_STRUCTURE_FROM_BATTMONITOR \
     { LOG_MAG_MSG, sizeof(log_MAG), \
       "MAG", "QBhhhhhhhhhBI",    "TimeUS,I,MagX,MagY,MagZ,OfsX,OfsY,OfsZ,MOX,MOY,MOZ,Health,S", "s#GGGGGGGGG-s", "F-CCCCCCCCC-F", true }, \
@@ -1286,7 +1329,7 @@ LOG_STRUCTURE_FROM_AVOIDANCE \
     { LOG_SIMSTATE_MSG, sizeof(log_AHRS), \
       "SIM","QccCfLLffff","TimeUS,Roll,Pitch,Yaw,Alt,Lat,Lng,Q1,Q2,Q3,Q4", "sddhmDU????", "FBBB0GG????", true }, \
     { LOG_TERRAIN_MSG, sizeof(log_TERRAIN), \
-      "TERR","QBLLHffHH","TimeUS,Status,Lat,Lng,Spacing,TerrH,CHeight,Pending,Loaded", "s-DU-mm--", "F-GG-00--", true }, \
+      "TERR","QBLLHffHHf","TimeUS,Status,Lat,Lng,Spacing,TerrH,CHeight,Pending,Loaded,ROfs", "s-DU-mm--m", "F-GG-00--0", true }, \
 LOG_STRUCTURE_FROM_ESC_TELEM \
     { LOG_CSRV_MSG, sizeof(log_CSRV), \
       "CSRV","QBfffB","TimeUS,Id,Pos,Force,Speed,Pow", "s#---%", "F-0000", true }, \
@@ -1347,7 +1390,11 @@ LOG_STRUCTURE_FROM_VISUALODOM \
       "FILE",   "NIBZ",       "FileName,Offset,Length,Data", "----", "----" }, \
 LOG_STRUCTURE_FROM_AIS, \
     { LOG_SCRIPTING_MSG, sizeof(log_Scripting), \
-      "SCR",   "QNIii", "TimeUS,Name,Runtime,Total_mem,Run_mem", "s-sbb", "F-F--", true }
+      "SCR",   "QNIii", "TimeUS,Name,Runtime,Total_mem,Run_mem", "s-sbb", "F-F--", true }, \
+    { LOG_VER_MSG, sizeof(log_VER), \
+      "VER",   "QBHBBBBIZH", "TimeUS,BT,BST,Maj,Min,Pat,FWT,GH,FWS,APJ", "s---------", "F---------", false }, \
+    { LOG_MOTBATT_MSG, sizeof(log_MotBatt), \
+      "MOTB", "QffffB",  "TimeUS,LiftMax,BatVolt,ThLimit,ThrAvMx,FailFlags", "s-----", "F-----" , true }
 
 // message types 0 to 63 reserved for vehicle specific use
 
@@ -1427,6 +1474,9 @@ enum LogMessages : uint8_t {
     LOG_STAK_MSG,
     LOG_FILE_MSG,
     LOG_SCRIPTING_MSG,
+    LOG_VIDEO_STABILISATION_MSG,
+    LOG_MOTBATT_MSG,
+    LOG_VER_MSG,
 
     _LOG_LAST_MSG_
 };

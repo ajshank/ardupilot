@@ -7,6 +7,11 @@
 #include <AP_Math/AP_Math.h>
 #include <AP_MSP/msp.h>
 
+#ifndef AP_AIRSPEED_ENABLED
+#define AP_AIRSPEED_ENABLED 1
+#endif
+
+
 class AP_Airspeed_Backend;
 
 #ifndef AIRSPEED_MAX_SENSORS
@@ -14,7 +19,7 @@ class AP_Airspeed_Backend;
 #endif
 
 #ifndef AP_AIRSPEED_AUTOCAL_ENABLE
-#define AP_AIRSPEED_AUTOCAL_ENABLE !defined(HAL_BUILD_AP_PERIPH)
+#define AP_AIRSPEED_AUTOCAL_ENABLE AP_AIRSPEED_ENABLED
 #endif
 
 #ifndef HAL_MSP_AIRSPEED_ENABLED
@@ -52,13 +57,16 @@ public:
 
     void init(void);
 
+    // indicate which bit in LOG_BITMASK indicates we should log airspeed readings
+    void set_log_bit(uint32_t log_bit) { _log_bit = log_bit; }
+
 #if AP_AIRSPEED_AUTOCAL_ENABLE
     // inflight ratio calibration
     void set_calibration_enabled(bool enable) {calibration_enabled = enable;}
 #endif //AP_AIRSPEED_AUTOCAL_ENABLE
 
     // read the analog source and update airspeed
-    void update(bool log);
+    void update(void);
 
     // calibrate the airspeed. This must be called on startup if the
     // altitude/climb_rate/acceleration interfaces are ever used
@@ -251,17 +259,19 @@ private:
     uint8_t primary;
     uint8_t num_sensors;
 
+    uint32_t _log_bit = -1;     // stores which bit in LOG_BITMASK is used to indicate we should log airspeed readings
+
     void read(uint8_t i);
     // return the differential pressure in Pascal for the last airspeed reading for the requested instance
     // returns 0 if the sensor is not enabled
     float get_pressure(uint8_t i);
 
-    // get the failure health probability
-    float get_health_failure_probability(uint8_t i) const {
+    // get the health probability
+    float get_health_probability(uint8_t i) const {
         return state[i].failures.health_probability;
     }
-    float get_health_failure_probability(void) const {
-        return get_health_failure_probability(primary);
+    float get_health_probability(void) const {
+        return get_health_probability(primary);
     }
 
     void update_calibration(uint8_t i, float raw_pressure);

@@ -21,12 +21,9 @@
 enum LoggingParameters {
     LOG_THR_MSG,
     LOG_NTUN_MSG,
-    LOG_STARTUP_MSG,
     LOG_STEERING_MSG,
     LOG_GUIDEDTARGET_MSG,
 };
-
-#define TYPE_GROUNDSTART_MSG    0x01
 
 #define MASK_LOG_ATTITUDE_FAST  (1<<0)
 #define MASK_LOG_ATTITUDE_MED   (1<<1)
@@ -45,6 +42,8 @@ enum LoggingParameters {
 #define MASK_LOG_RC             (1<<14)
 // #define MASK_LOG_ARM_DISARM     (1<<15)
 #define MASK_LOG_IMU_RAW        (1UL<<19)
+#define MASK_LOG_VIDEO_STABILISATION (1UL<<20)
+
 
 // for mavlink SET_POSITION_TARGET messages
 #define MAVLINK_SET_POS_TYPE_MASK_POS_IGNORE      ((1<<0) | (1<<1))

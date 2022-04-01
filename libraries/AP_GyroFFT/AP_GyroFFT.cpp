@@ -180,7 +180,7 @@ AP_GyroFFT::AP_GyroFFT()
 }
 
 // initialize the FFT parameters and engine
-void AP_GyroFFT::init(uint32_t target_looptime_us)
+void AP_GyroFFT::init(uint16_t loop_rate_hz)
 {
     // if FFT analysis is not enabled we don't want to allocate any of the associated resources
     if (!_enable) {
@@ -226,7 +226,6 @@ void AP_GyroFFT::init(uint32_t target_looptime_us)
     if (_sample_mode == 0) {
         _fft_sampling_rate_hz = _ins->get_raw_gyro_rate_hz();
     } else {
-        const uint16_t loop_rate_hz = 1000*1000UL / target_looptime_us;
         _fft_sampling_rate_hz = loop_rate_hz / _sample_mode;
         for (uint8_t axis = 0; axis < XYZ_AXIS_COUNT; axis++) {
             if (!_downsampled_gyro_data[axis].set_size(_window_size + _samples_per_frame)) {
@@ -476,7 +475,7 @@ void AP_GyroFFT::update_parameters()
     // determine the endt FFT bin for all frequency detection
     _config._fft_end_bin = MIN(ceilf(_fft_max_hz.get() / _state->_bin_resolution), _state->_bin_count);
     // actual attenuation from the db value
-    _config._attenuation_cutoff = powf(10.0f, -_attenuation_power_db / 10.0f);
+    _config._attenuation_cutoff = powf(10.0f, -_attenuation_power_db * 0.1f);
 }
 
 // thread for processing gyro data via FFT
@@ -575,7 +574,7 @@ bool AP_GyroFFT::pre_arm_check(char *failure_msg, const uint8_t failure_msg_len)
 
     if (_calibrated) {
         // provide the user with some useful information about what they have configured
-        gcs().send_text(MAV_SEVERITY_INFO, "FFT: calibrated %.1fKHz/%.1fHz/%.1fHz", _fft_sampling_rate_hz / 1000.0f,
+        gcs().send_text(MAV_SEVERITY_INFO, "FFT: calibrated %.1fKHz/%.1fHz/%.1fHz", _fft_sampling_rate_hz * 0.001f,
              _state->_bin_resolution * 0.5, 1000.0f * XYZ_AXIS_COUNT / _frame_time_ms);
     }
 
@@ -778,9 +777,6 @@ float AP_GyroFFT::calculate_weighted_freq_hz(const Vector3f& energy, const Vecto
 // log gyro fft messages
 void AP_GyroFFT::write_log_messages()
 {
-    // still want to see the harmonic notch values
-    AP::vehicle()->write_notch_log_messages();
-
     if (!analysis_enabled()) {
         return;
     }

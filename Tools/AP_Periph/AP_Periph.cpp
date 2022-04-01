@@ -21,12 +21,14 @@
 
  */
 #include <AP_HAL/AP_HAL.h>
+#include <AP_HAL/AP_HAL_Boards.h>
 #include "AP_Periph.h"
 #include <stdio.h>
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
 #include <AP_HAL_ChibiOS/hwdef/common/stm32_util.h>
 #include <AP_HAL_ChibiOS/hwdef/common/watchdog.h>
+#include <AP_HAL_ChibiOS/I2CDevice.h>
 #endif
 
 extern const AP_HAL::HAL &hal;
@@ -168,7 +170,7 @@ void AP_Periph_FW::init()
 #endif
 
 #ifdef HAL_PERIPH_NEOPIXEL_CHAN_WITHOUT_NOTIFY
-    hal.rcout->set_serial_led_num_LEDs(HAL_PERIPH_NEOPIXEL_CHAN_WITHOUT_NOTIFY, AP_HAL::RCOutput::MODE_NEOPIXEL);
+    hal.rcout->set_serial_led_num_LEDs(HAL_PERIPH_NEOPIXEL_CHAN_WITHOUT_NOTIFY, HAL_PERIPH_NEOPIXEL_COUNT_WITHOUT_NOTIFY, AP_HAL::RCOutput::MODE_NEOPIXEL);
 #endif
 
 #ifdef HAL_PERIPH_ENABLE_RC_OUT
@@ -180,9 +182,24 @@ void AP_Periph_FW::init()
 #endif
 
 #ifdef HAL_PERIPH_ENABLE_AIRSPEED
-    if (airspeed.enabled()) {
+    if (airspeed.enabled()){
+#if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
+        const bool pins_enabled = ChibiOS::I2CBus::check_select_pins(0x01);
+        if (pins_enabled) {
+            ChibiOS::I2CBus::set_bus_to_floating(0);
+#ifdef HAL_GPIO_PIN_LED_CAN_I2C
+            palWriteLine(HAL_GPIO_PIN_LED_CAN_I2C, 1);
+#endif
+        } else {
+            // Note: logging of ARSPD is not enabled currently. To enable, call airspeed.set_log_bit(); here
+            airspeed.init();
+        }
+#else
+        // Note: logging of ARSPD is not enabled currently. To enable, call airspeed.set_log_bit(); here
         airspeed.init();
+#endif
     }
+
 #endif
 
 #ifdef HAL_PERIPH_ENABLE_RANGEFINDER
@@ -367,12 +384,21 @@ void AP_Periph_FW::update()
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS && CH_DBG_ENABLE_STACK_CHECK == TRUE
     static uint32_t last_debug_ms;
-    if (g.debug==1 && now - last_debug_ms > 5000) {
+    if ((g.debug&(1<<DEBUG_SHOW_STACK)) && now - last_debug_ms > 5000) {
         last_debug_ms = now;
         show_stack_free();
     }
 #endif
-    
+
+    if ((g.debug&(1<<DEBUG_AUTOREBOOT)) && AP_HAL::millis() > 15000) {
+        // attempt reboot with HOLD after 15s
+        periph.prepare_reboot();
+#if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
+        set_fast_reboot((rtc_boot_magic)(RTC_BOOT_HOLD));
+        NVIC_SystemReset();
+#endif
+    }
+
 #ifdef HAL_PERIPH_ENABLE_BATTERY
     if (now - battery.last_read_ms >= 100) {
         // update battery at 10Hz

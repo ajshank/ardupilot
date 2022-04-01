@@ -25,6 +25,10 @@
 
 #ifdef HAVE_AP_BLHELI_SUPPORT
 
+#if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
+#include <hal.h>
+#endif
+
 #include <AP_Math/crc.h>
 #include <AP_Vehicle/AP_Vehicle.h>
 #if APM_BUILD_TYPE(APM_BUILD_Rover)
@@ -56,6 +60,7 @@ const AP_Param::GroupInfo AP_BLHeli::var_info[] = {
     // @Description: Enable of BLHeli pass-thru servo protocol support to specific channels. This mask is in addition to motors enabled using SERVO_BLH_AUTO (if any)
     // @Bitmask: 0:Channel1,1:Channel2,2:Channel3,3:Channel4,4:Channel5,5:Channel6,6:Channel7,7:Channel8,8:Channel9,9:Channel10,10:Channel11,11:Channel12,12:Channel13,13:Channel14,14:Channel15,15:Channel16
     // @User: Advanced
+    // @RebootRequired: True
     AP_GROUPINFO("MASK",  1, AP_BLHeli, channel_mask, 0),
 
 #if APM_BUILD_COPTER_OR_HELI || APM_BUILD_TYPE(APM_BUILD_ArduPlane) || APM_BUILD_TYPE(APM_BUILD_Rover)
@@ -64,6 +69,7 @@ const AP_Param::GroupInfo AP_BLHeli::var_info[] = {
     // @Description: If set to 1 this auto-enables BLHeli pass-thru support for all multicopter motors
     // @Values: 0:Disabled,1:Enabled
     // @User: Standard
+    // @RebootRequired: True
     AP_GROUPINFO("AUTO",  2, AP_BLHeli, channel_auto, 0),
 #endif
 
@@ -102,12 +108,13 @@ const AP_Param::GroupInfo AP_BLHeli::var_info[] = {
     // @Description: When set to a non-zero value this overrides the output type for the output channels given by SERVO_BLH_MASK. This can be used to enable DShot on outputs that are not part of the multicopter motors group.
     // @Values: 0:None,1:OneShot,2:OneShot125,3:Brushed,4:DShot150,5:DShot300,6:DShot600,7:DShot1200
     // @User: Advanced
+    // @RebootRequired: True
     AP_GROUPINFO("OTYPE",  7, AP_BLHeli, output_type, 0),
 
     // @Param: PORT
     // @DisplayName: Control port
-    // @Description: This sets the serial port to use for blheli pass-thru
-    // @Values: 0:Console,1:Serial1,2:Serial2,3:Serial3,4:Serial4,5:Serial5
+    // @Description: This sets the mavlink channel to use for blheli pass-thru. The channel number is determined by the number of serial ports configured to use mavlink. So 0 is always the console, 1 is the next serial port using mavlink, 2 the next after that and so on.
+    // @Values: 0:Console,1:Mavlink Serial Channel1,2:Mavlink Serial Channel2,3:Mavlink Serial Channel3,4:Mavlink Serial Channel4,5:Mavlink Serial Channel5
     // @User: Advanced
     AP_GROUPINFO("PORT",  8, AP_BLHeli, control_port, 0),
 
@@ -116,6 +123,7 @@ const AP_Param::GroupInfo AP_BLHeli::var_info[] = {
     // @Description: This allows calculation of true RPM from ESC's eRPM. The default is 14.
     // @Range: 1 127
     // @User: Advanced
+    // @RebootRequired: True
     AP_GROUPINFO("POLES",  9, AP_BLHeli, motor_poles, 14),
 
     // @Param: 3DMASK
@@ -123,6 +131,7 @@ const AP_Param::GroupInfo AP_BLHeli::var_info[] = {
     // @Description: Mask of channels which are dynamically reversible. This is used to configure ESCs in '3D' mode, allowing for the motor to spin in either direction
     // @Bitmask: 0:Channel1,1:Channel2,2:Channel3,3:Channel4,4:Channel5,5:Channel6,6:Channel7,7:Channel8,8:Channel9,9:Channel10,10:Channel11,11:Channel12,12:Channel13,13:Channel14,14:Channel15,15:Channel16
     // @User: Advanced
+    // @RebootRequired: True
     AP_GROUPINFO("3DMASK",  10, AP_BLHeli, channel_reversible_mask, 0),
 
 #ifdef HAL_WITH_BIDIR_DSHOT
@@ -131,6 +140,7 @@ const AP_Param::GroupInfo AP_BLHeli::var_info[] = {
     // @Description: Mask of channels which support bi-directional dshot. This is used for ESCs which have firmware that supports bi-directional dshot allowing fast rpm telemetry values to be returned for the harmonic notch.
     // @Bitmask: 0:Channel1,1:Channel2,2:Channel3,3:Channel4,4:Channel5,5:Channel6,6:Channel7,7:Channel8,8:Channel9,9:Channel10,10:Channel11,11:Channel12,12:Channel13,13:Channel14,14:Channel15,15:Channel16
     // @User: Advanced
+    // @RebootRequired: True
     AP_GROUPINFO("BDMASK",  11, AP_BLHeli, channel_bidir_dshot_mask, 0),
 #endif
     // @Param: RVMASK
@@ -138,6 +148,7 @@ const AP_Param::GroupInfo AP_BLHeli::var_info[] = {
     // @Description: Mask of channels which are reversed. This is used to configure ESCs in reversed mode
     // @Bitmask: 0:Channel1,1:Channel2,2:Channel3,3:Channel4,4:Channel5,5:Channel6,6:Channel7,7:Channel8,8:Channel9,9:Channel10,10:Channel11,11:Channel12,12:Channel13,13:Channel14,14:Channel15,15:Channel16
     // @User: Advanced
+    // @RebootRequired: True
     AP_GROUPINFO("RVMASK",  12, AP_BLHeli, channel_reversed_mask, 0),
 
     AP_GROUPEND
@@ -515,7 +526,15 @@ void AP_BLHeli::msp_process_command(void)
             serial_start_ms = 0;
             break;
         }
-        msp_send_reply(msp.cmdMSP, &n, 1);
+        // doing the serial setup here avoids delays when doing it on demand and makes
+        // BLHeliSuite considerably more reliable
+        EXPECT_DELAY_MS(1000);
+        if (!hal.rcout->serial_setup_output(motor_map[0], 19200, motor_mask)) {
+            msp_send_ack(ACK_D_GENERAL_ERROR);
+            break;
+        } else {
+            msp_send_reply(msp.cmdMSP, &n, 1);
+        }
         break;
     }
     default:

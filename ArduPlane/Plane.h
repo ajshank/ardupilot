@@ -31,6 +31,7 @@
 
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Common/AP_Common.h>
+#include <AP_Airspeed/AP_Airspeed.h>
 #include <AP_Param/AP_Param.h>
 #include <StorageManager/StorageManager.h>
 #include <AP_Math/AP_Math.h>        // ArduPilot Mega Vector/Matrix math Library
@@ -41,7 +42,6 @@
 #include <AP_RangeFinder/AP_RangeFinder.h>     // Range finder library
 #include <Filter/Filter.h>                     // Filter library
 #include <AP_Camera/AP_Camera.h>          // Photo or video camera
-#include <AP_Airspeed/AP_Airspeed.h>
 #include <AP_Terrain/AP_Terrain.h>
 #include <AP_RPM/AP_RPM.h>
 #include <AP_Stats/AP_Stats.h>     // statistics library
@@ -83,6 +83,7 @@
 #include <AP_Gripper/AP_Gripper.h>
 #include <AP_Landing/AP_Landing.h>
 #include <AP_LandingGear/AP_LandingGear.h>     // Landing Gear library
+#include <AP_Follow/AP_Follow.h>
 
 #include "GCS_Mavlink.h"
 #include "GCS_Plane.h"
@@ -241,7 +242,7 @@ private:
     AP_Camera camera{MASK_LOG_CAMERA};
 #endif
 
-#if OPTFLOW == ENABLED
+#if AP_OPTICALFLOW_ENABLED
     // Optical flow sensor
     OpticalFlow optflow;
 #endif
@@ -281,6 +282,7 @@ private:
     ModeQLand mode_qland;
     ModeQRTL mode_qrtl;
     ModeQAcro mode_qacro;
+    ModeLoiterAltQLand mode_loiter_qland;
 #if QAUTOTUNE_ENABLED
     ModeQAutotune mode_qautotune;
 #endif  // QAUTOTUNE_ENABLED
@@ -288,9 +290,6 @@ private:
     ModeTakeoff mode_takeoff;
 #if HAL_SOARING_ENABLED
     ModeThermal mode_thermal;
-#endif
-#if HAL_QUADPLANE_ENABLED
-    ModeLoiterAltQLand mode_lotier_qland;
 #endif
 
     // This is the state of the flight control system
@@ -392,13 +391,13 @@ private:
     // Difference between current altitude and desired altitude.  Centimeters
     int32_t altitude_error_cm;
 
+    // speed scaler for control surfaces, updated at 10Hz
+    float surface_speed_scaler = 1.0;
+
     // Battery Sensors
     AP_BattMonitor battery{MASK_LOG_CURRENT,
                            FUNCTOR_BIND_MEMBER(&Plane::handle_battery_failsafe, void, const char*, const int8_t),
                            _failsafe_priorities};
-
-    // Airspeed Sensors
-    AP_Airspeed airspeed;
 
     // ACRO controller state
     struct {
@@ -518,14 +517,17 @@ private:
 #if AP_SCRIPTING_ENABLED
     // support for scripting nav commands, with verify
     struct {
+        bool enabled;
         uint16_t id;
         float roll_rate_dps;
         float pitch_rate_dps;
         float yaw_rate_dps;
         float throttle_pct;
         uint32_t start_ms;
+        uint32_t current_ms;
         bool done;
     } nav_scripting;
+    
 #endif
 
     struct {
@@ -639,7 +641,7 @@ private:
 
     // terrain handling
 #if AP_TERRAIN_AVAILABLE
-    AP_Terrain terrain{mission};
+    AP_Terrain terrain;
 #endif
 
     AP_Landing landing{mission,ahrs,&TECS_controller,nav_controller,aparm,
@@ -718,9 +720,6 @@ private:
 
     // The location of the current/active waypoint.  Used for altitude ramp, track following and loiter calculations.
     Location next_WP_loc {};
-
-    // The location of the active waypoint in Guided mode.
-    struct Location guided_WP_loc {};
 
     // Altitude control
     struct {
@@ -843,7 +842,7 @@ private:
     int32_t calc_altitude_error_cm(void);
     void check_fbwb_minimum_altitude(void);
     void reset_offset_altitude(void);
-    void set_offset_altitude_location(const Location &loc);
+    void set_offset_altitude_location(const Location &start_loc, const Location &destination_loc);
     bool above_location_current(const Location &loc);
     void setup_terrain_target_alt(Location &loc) const;
     int32_t adjusted_altitude_cm(void);
@@ -858,7 +857,8 @@ private:
     void calc_throttle();
     void calc_nav_roll();
     void calc_nav_pitch();
-    float get_speed_scaler(void);
+    float calc_speed_scaler(void);
+    float get_speed_scaler(void) const { return surface_speed_scaler; }
     bool stick_mixing_enabled(void);
     void stabilize_roll(float speed_scaler);
     float stabilize_roll_get_roll_out(float speed_scaler);
@@ -878,7 +878,6 @@ private:
 
     void Log_Write_Fast(void);
     void Log_Write_Attitude(void);
-    void Log_Write_Startup(uint8_t type);
     void Log_Write_Control_Tuning();
     void Log_Write_OFG_Guided();
     void Log_Write_Guided(void);
@@ -892,7 +891,6 @@ private:
 
     // Parameters.cpp
     void load_parameters(void) override;
-    void convert_mixers(void);
 
     // commands_logic.cpp
     void set_next_WP(const struct Location &loc);
@@ -946,7 +944,7 @@ private:
 #endif
 
     // commands.cpp
-    void set_guided_WP(void);
+    void set_guided_WP(const Location &loc);
     void update_home();
     // set home location and store it persistently:
     bool set_home_persistently(const Location &loc) WARN_IF_UNUSED;
@@ -1043,8 +1041,6 @@ private:
 
     // sensors.cpp
     void read_rangefinder(void);
-    void read_airspeed(void);
-    void rpm_update(void);
 
     // system.cpp
     void init_ardupilot() override;
@@ -1082,7 +1078,6 @@ private:
     void set_landing_gear(void);
     void dspoiler_update(void);
     void airbrake_update(void);
-    void servo_output_mixers(void);
     void landing_neutral_control_surface_servos(void);
     void servos_output(void);
     void servos_auto_trim(void);
@@ -1095,7 +1090,7 @@ private:
     void update_throttle_hover();
     void channel_function_mixer(SRV_Channel::Aux_servo_function_t func1_in, SRV_Channel::Aux_servo_function_t func2_in,
                                 SRV_Channel::Aux_servo_function_t func1_out, SRV_Channel::Aux_servo_function_t func2_out) const;
-    void flaperon_update(int8_t flap_percent);
+    void flaperon_update();
 
     // is_flying.cpp
     void update_is_flying_5Hz(void);
@@ -1140,9 +1135,10 @@ private:
 
     // command throttle percentage and roll, pitch, yaw target
     // rates. For use with scripting controllers
-    bool set_target_throttle_rate_rpy(float throttle_pct, float roll_rate_dps, float pitch_rate_dps, float yaw_rate_dps) override;
+    void set_target_throttle_rate_rpy(float throttle_pct, float roll_rate_dps, float pitch_rate_dps, float yaw_rate_dps) override;
+    bool nav_scripting_enable(uint8_t mode) override;
 #endif
-
+ 
     enum Failsafe_Action {
         Failsafe_Action_None      = 0,
         Failsafe_Action_RTL       = 1,
@@ -1212,6 +1208,8 @@ public:
 #if AP_SCRIPTING_ENABLED
     bool set_target_location(const Location& target_loc) override;
     bool get_target_location(Location& target_loc) override;
+    bool update_target_location(const Location &old_loc, const Location &new_loc) override;
+    bool set_velocity_match(const Vector2f &velocity) override;
 #endif // AP_SCRIPTING_ENABLED
 
 };

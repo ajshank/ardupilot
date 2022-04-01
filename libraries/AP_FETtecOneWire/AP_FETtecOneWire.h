@@ -193,7 +193,6 @@ private:
     };
 
     uint32_t _min_fast_throttle_period_us;  ///< minimum allowed fast-throttle command transmit period
-    uint32_t _last_not_running_warning_ms;  ///< last time we warned the user their ESCs are stuffed
     int32_t _motor_mask;                    ///< an un-mutable copy of the _motor_mask_parameter taken before _init_done goes true
     int32_t _reverse_mask;                  ///< a copy of the _reverse_mask_parameter taken while not armed
     int32_t _running_mask;                  ///< a bitmask of the actively running ESCs
@@ -372,7 +371,7 @@ private:
         uint16_t voltage;         // centi-Volt
         uint16_t current;         // centi-Ampere  (signed?)
         int16_t rpm;              // centi-rpm
-        uint16_t consumption_mah; // mili-Ampere.hour
+        uint16_t consumption_mah; // milli-Ampere.hour
         uint16_t tx_err_count;    // CRC error count, as perceived from the ESC receiving side
     };
 

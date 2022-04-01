@@ -70,6 +70,8 @@ const AP_Filesystem::Backend AP_Filesystem::backends[] = {
 #endif
 };
 
+extern const AP_HAL::HAL& hal;
+
 #define MAX_FD_PER_BACKEND 256U
 #define NUM_BACKENDS ARRAY_SIZE(backends)
 #define LOCAL_BACKEND backends[0]
@@ -104,10 +106,10 @@ const AP_Filesystem::Backend &AP_Filesystem::backend_by_fd(int &fd) const
     return backends[idx];
 }
 
-int AP_Filesystem::open(const char *fname, int flags)
+int AP_Filesystem::open(const char *fname, int flags, bool allow_absolute_paths)
 {
     const Backend &backend = backend_by_path(fname);
-    int fd = backend.fs.open(fname, flags);
+    int fd = backend.fs.open(fname, flags, allow_absolute_paths);
     if (fd < 0) {
         return -1;
     }
@@ -258,7 +260,10 @@ bool AP_Filesystem::fgets(char *buf, uint8_t buflen, int fd)
 
     uint8_t i = 0;
     for (; i<buflen-1; i++) {
-        if (backend.fs.read(fd, &buf[i], 1) != 1) {
+        if (backend.fs.read(fd, &buf[i], 1) <= 0) {
+            if (i==0) {
+                return false;
+            }
             break;
         }
         if (buf[i] == '\r' || buf[i] == '\n') {
@@ -266,7 +271,20 @@ bool AP_Filesystem::fgets(char *buf, uint8_t buflen, int fd)
         }
     }
     buf[i] = '\0';
-    return i != 0;
+    return true;
+}
+
+// format filesystem
+bool AP_Filesystem::format(void)
+{
+#if AP_FILESYSTEM_FORMAT_ENABLED
+    if (hal.util->get_soft_armed()) {
+        return false;
+    }
+    return LOCAL_BACKEND.fs.format();
+#else
+    return false;
+#endif
 }
 
 namespace AP

@@ -112,7 +112,7 @@ AP_HW_CUAV_X7_PRO                    1010
 AP_HW_SUCCEXF4                       1011
 AP_HW_LIGHTSPARKMINI                 1012
 AP_HW_MATEKH743                      1013
-AP_HW_MRO_MAXXIUM                    1014
+AP_HW_MATEKF405_GPS                  1014
 AP_HW_MRO_NEXUS                      1015
 AP_HW_HITEC_MOSAIC                   1016
 AP_HW_MRO_PIXRACER_PRO               1017
@@ -132,7 +132,7 @@ AP_HW_KAKUTEF4_MINI                  1030
 AP_HW_H31_PIXC4_PI                   1031
 AP_HW_H31_PIXC4_JETSON               1032
 AP_HW_CUBEORANGE_JOEY                1033
-AP_HW_SIERRAF9PGPS_PERIPH            1034
+AP_HW_SierraF9P                      1034
 AP_HW_HolybroGPS                     1035
 AP_HW_QioTekZealotH743               1036
 AP_HW_HEREPRO                        1037
@@ -153,6 +153,15 @@ AP_HW_NucleoL476                     1051
 AP_HW_SierraF405                     1052
 AP_HW_CarbonixL496                   1053
 AP_HW_MatekF405_TE                   1054
+AP_HW_SierraF412                     1055
+AP_HW_BEASTH7v2                      1056
+AP_HW_BEASTF7v2                      1057
+AP_HW_KakuteH7Mini                   1058
+AP_HW_JHEMCUGSF405A                  1059
+AP_HW_SPRACINGH7                     1060
+AP_HW_DEVEBOXH7                      1061
+AP_HW_MatekL431                      1062
+AP_HW_CUBEORANGEPLUS                 1063
 
 AP_HW_CUBEORANGE_PERIPH              1400
 AP_HW_CUBEBLACK_PERIPH               1401

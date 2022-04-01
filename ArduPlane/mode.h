@@ -173,9 +173,9 @@ public:
 
     bool allows_throttle_nudging() const override { return true; }
 
-    bool does_auto_navigation() const override { return true; }
+    bool does_auto_navigation() const override;
 
-    bool does_auto_throttle() const override { return true; }
+    bool does_auto_throttle() const override;
 
 protected:
 
@@ -591,6 +591,8 @@ public:
     bool does_auto_throttle() const override { return true; }
 
     bool update_target_altitude() override;
+
+    bool allows_throttle_nudging() const override;
 
 protected:
 

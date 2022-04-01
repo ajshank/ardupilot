@@ -333,11 +333,15 @@ uint16_t get_random16(void)
 }
 
 
-#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+#if AP_SIM_ENABLED
 // generate a random float between -1 and 1, for use in SITL
 float rand_float(void)
 {
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
     return ((((unsigned)random()) % 2000000) - 1.0e6) / 1.0e6;
+#else
+    return get_random16() / 65535.0;
+#endif
 }
 
 Vector3f rand_vec3f(void)
@@ -472,4 +476,10 @@ float fixedwing_turn_rate(float bank_angle_deg, float airspeed)
 {
     bank_angle_deg = constrain_float(bank_angle_deg, -80, 80);
     return degrees(GRAVITY_MSS*tanf(radians(bank_angle_deg))/MAX(airspeed,1));
+}
+
+// convert degrees farenheight to Kelvin
+float degF_to_Kelvin(float temp_f)
+{
+    return (temp_f + 459.67) * 0.55556;
 }

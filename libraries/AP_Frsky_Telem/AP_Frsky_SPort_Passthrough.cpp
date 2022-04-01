@@ -610,7 +610,7 @@ uint32_t AP_Frsky_SPort_Passthrough::calc_home(void)
     {
         AP_AHRS &_ahrs = AP::ahrs();
         WITH_SEMAPHORE(_ahrs.get_semaphore());
-        got_position = _ahrs.get_position(loc);
+        got_position = _ahrs.get_location(loc);
         home_loc = _ahrs.get_home();
     }
 
@@ -857,10 +857,10 @@ bool AP_Frsky_SPort_Passthrough::set_telem_data(const uint8_t frame, const uint1
     // queue only Uplink packets
     if (frame == SPORT_UPLINK_FRAME || frame == SPORT_UPLINK_FRAME_RW) {
         const AP_Frsky_SPort::sport_packet_t sp {
-            0x00,   // this is ignored by process_sport_rx_queue() so no need for a real sensor ID
+            { 0x00,   // this is ignored by process_sport_rx_queue() so no need for a real sensor ID
             frame,
             appid,
-            data
+            data }
         };
 
         _SPort_bidir.rx_packet_queue.push_force(sp);

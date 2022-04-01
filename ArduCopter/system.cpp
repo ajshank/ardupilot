@@ -111,16 +111,20 @@ void Copter::init_ardupilot()
     AP::compass().set_log_bit(MASK_LOG_COMPASS);
     AP::compass().init();
 
+#if AP_AIRSPEED_ENABLED
+    airspeed.set_log_bit(MASK_LOG_IMU);
+#endif
+
 #if AC_OAPATHPLANNER_ENABLED == ENABLED
     g2.oa.init();
 #endif
 
     attitude_control->parameter_sanity_check();
 
-#if OPTFLOW == ENABLED
+#if AP_OPTICALFLOW_ENABLED
     // initialise optical flow sensor
     optflow.init(MASK_LOG_OPTFLOW);
-#endif      // OPTFLOW == ENABLED
+#endif      // AP_OPTICALFLOW_ENABLED
 
 #if HAL_MOUNT_ENABLED
     // initialise camera mount
@@ -149,8 +153,10 @@ void Copter::init_ardupilot()
     // initialise rangefinder
     init_rangefinder();
 
+#if HAL_PROXIMITY_ENABLED
     // init proximity sensor
-    init_proximity();
+    g2.proximity.init();
+#endif
 
 #if BEACON_ENABLED == ENABLED
     // init beacons used for non-gps position estimation
@@ -341,7 +347,7 @@ bool Copter::ekf_has_relative_position() const
 
     // return immediately if neither optflow nor visual odometry is enabled
     bool enabled = false;
-#if OPTFLOW == ENABLED
+#if AP_OPTICALFLOW_ENABLED
     if (optflow.enabled()) {
         enabled = true;
     }
@@ -469,7 +475,7 @@ void Copter::allocate_motors(void)
             motors_var_info = AP_MotorsMatrix_6DoF_Scripting::var_info;
 #endif // AP_SCRIPTING_ENABLED
             break;
-case AP_Motors::MOTOR_FRAME_DYNAMIC_SCRIPTING_MATRIX:
+        case AP_Motors::MOTOR_FRAME_DYNAMIC_SCRIPTING_MATRIX:
 #if AP_SCRIPTING_ENABLED
             motors = new AP_MotorsMatrix_Scripting_Dynamic(copter.scheduler.get_loop_rate_hz());
             motors_var_info = AP_MotorsMatrix_Scripting_Dynamic::var_info;

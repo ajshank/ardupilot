@@ -13,7 +13,7 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 #pragma once
-#include <GCS_MAVLink/GCS.h>
+#include <GCS_MAVLink/GCS_MAVLink.h>
 
 class QuadPlane;
 class AP_MotorsMulticopter;
@@ -51,6 +51,10 @@ public:
     virtual MAV_VTOL_STATE get_mav_vtol_state() const = 0;
 
     virtual bool set_VTOL_roll_pitch_limit(int32_t& nav_roll_cd, int32_t& nav_pitch_cd) { return false; }
+
+    virtual bool allow_weathervane() { return true; }
+
+    virtual void set_last_fw_pitch(void) {}
 
 protected:
 
@@ -91,6 +95,8 @@ public:
 
     bool set_VTOL_roll_pitch_limit(int32_t& nav_roll_cd, int32_t& nav_pitch_cd) override;
 
+    void set_last_fw_pitch(void) override;
+
 protected:
 
     enum {
@@ -112,6 +118,8 @@ protected:
 
     // tiltrotor tilt angle when airspeed wait transition stage completes
     float airspeed_reached_tilt;
+
+    bool in_forced_transition;
 
 };
 

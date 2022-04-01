@@ -55,7 +55,6 @@
 #if FRAME_CONFIG == HELI_FRAME
   # define RC_FAST_SPEED                        125
   # define WP_YAW_BEHAVIOR_DEFAULT              WP_YAW_BEHAVIOR_LOOK_AHEAD
-  # define AUTOTUNE_ENABLED                     DISABLED
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -166,12 +165,6 @@
 
 #ifndef EKF_ORIGIN_MAX_ALT_KM
  # define EKF_ORIGIN_MAX_ALT_KM         50   // EKF origin and home must be within 50km vertically
-#endif
-
-//////////////////////////////////////////////////////////////////////////////
-//  OPTICAL_FLOW
-#ifndef OPTFLOW
- # define OPTFLOW       ENABLED
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -303,7 +296,7 @@
 //////////////////////////////////////////////////////////////////////////////
 // Sport - fly vehicle in rate-controlled (earth-frame) mode
 #ifndef MODE_SPORT_ENABLED
-# define MODE_SPORT_ENABLED !HAL_MINIMIZE_FEATURES
+# define MODE_SPORT_ENABLED DISABLED
 #endif
 
 //////////////////////////////////////////////////////////////////////////////
@@ -669,10 +662,6 @@
 
 #if MODE_AUTO_ENABLED && !MODE_RTL_ENABLED
   #error ModeAuto requires ModeRTL which is disabled
-#endif
-
-#if AP_TERRAIN_AVAILABLE && !MODE_AUTO_ENABLED
-  #error Terrain requires ModeAuto which is disabled
 #endif
 
 #if FRAME_CONFIG == HELI_FRAME && !MODE_ACRO_ENABLED

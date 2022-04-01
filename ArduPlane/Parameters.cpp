@@ -618,7 +618,7 @@ const AP_Param::Info Plane::var_info[] = {
     // @Param: LOG_BITMASK
     // @DisplayName: Log bitmask
     // @Description: Bitmap of what on-board log types to enable. This value is made up of the sum of each of the log types you want to be saved. It is usually best just to enable all log types by setting this to 65535. The individual bits are ATTITUDE_FAST=1, ATTITUDE_MEDIUM=2, GPS=4, PerformanceMonitoring=8, ControlTuning=16, NavigationTuning=32, Mode=64, IMU=128, Commands=256, Battery=512, Compass=1024, TECS=2048, Camera=4096, RCandServo=8192, Sonar=16384, Arming=32768, FullLogs=65535
-    // @Bitmask: 0:ATTITUDE_FAST,1:ATTITUDE_MED,2:GPS,3:PM,4:CTUN,5:NTUN,6:MODE,7:IMU,8:CMD,9:CURRENT,10:COMPASS,11:TECS,12:CAMERA,13:RC,14:SONAR,15:ARM/DISARM,19:IMU_RAW,20:ATTITUDE_FULLRATE
+    // @Bitmask: 0:ATTITUDE_FAST,1:ATTITUDE_MED,2:GPS,3:PM,4:CTUN,5:NTUN,6:MODE,7:IMU,8:CMD,9:CURRENT,10:COMPASS,11:TECS,12:CAMERA,13:RC,14:SONAR,15:ARM/DISARM,19:IMU_RAW,20:ATTITUDE_FULLRATE,21:VideoStabilization
     // @User: Advanced
     GSCALAR(log_bitmask,            "LOG_BITMASK",    DEFAULT_LOG_BITMASK),
 
@@ -716,10 +716,10 @@ const AP_Param::Info Plane::var_info[] = {
 
     // @Param: RTL_AUTOLAND
     // @DisplayName: RTL auto land
-    // @Description: Automatically begin landing sequence after arriving at RTL location. This requires the addition of a DO_LAND_START mission item, which acts as a marker for the start of a landing sequence. The closest landing sequence will be chosen to the current location. 
-    // @Values: 0:Disable,1:Enable - go HOME then land,2:Enable - go directly to landing sequence
+    // @Description: Automatically begin landing sequence after arriving at RTL location. This requires the addition of a DO_LAND_START mission item, which acts as a marker for the start of a landing sequence. The closest landing sequence will be chosen to the current location. If this is set to 0 and there is a DO_LAND_START mission item then you will get an arming check failure. You can set to a value of 3 to avoid the arming check failure and use the DO_LAND_START for go-around without it changing RTL behaviour. For a value of 1 a rally point will be used instead of HOME if in range (see rally point documentation).
+    // @Values: 0:Disable,1:Fly HOME then land,2:Go directly to landing sequence, 3:OnlyForGoAround
     // @User: Standard
-    GSCALAR(rtl_autoland,         "RTL_AUTOLAND",   0),
+    GSCALAR(rtl_autoland,         "RTL_AUTOLAND",   float(RtlAutoland::RTL_DISABLE)),
 
     // @Param: CRASH_ACC_THRESH
     // @DisplayName: Crash Deceleration Threshold
@@ -890,9 +890,7 @@ const AP_Param::Info Plane::var_info[] = {
     // @Path: ../libraries/AP_AHRS/AP_AHRS.cpp
     GOBJECT(ahrs,                   "AHRS_",    AP_AHRS),
 
-    // @Group: ARSPD
-    // @Path: ../libraries/AP_Airspeed/AP_Airspeed.cpp
-    GOBJECT(airspeed,                               "ARSPD",   AP_Airspeed),
+    // Airspeed was here
 
     // @Group: NAVL1_
     // @Path: ../libraries/AP_L1_Control/AP_L1_Control.cpp
@@ -926,7 +924,7 @@ const AP_Param::Info Plane::var_info[] = {
     GOBJECT(can_mgr,        "CAN_",       AP_CANManager),
 #endif
 
-#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+#if AP_SIM_ENABLED
     // @Group: SIM_
     // @Path: ../libraries/SITL/SITL.cpp
     GOBJECT(sitl, "SIM_", SITL::SIM),
@@ -938,9 +936,9 @@ const AP_Param::Info Plane::var_info[] = {
     GOBJECT(afs,  "AFS_", AP_AdvancedFailsafe),
 #endif
 
-#if OPTFLOW == ENABLED
+#if AP_OPTICALFLOW_ENABLED
     // @Group: FLOW
-    // @Path: ../libraries/AP_OpticalFlow/OpticalFlow.cpp
+    // @Path: ../libraries/AP_OpticalFlow/AP_OpticalFlow.cpp
     GOBJECT(optflow,   "FLOW", OpticalFlow),
 #endif
 
@@ -1231,6 +1229,12 @@ const AP_Param::GroupInfo ParametersG2::var_info[] = {
     // @User: Advanced
     // @Bitmask: 0: Servo 1, 1: Servo 2, 2: Servo 3, 3: Servo 4, 4: Servo 5, 5: Servo 6, 6: Servo 7, 7: Servo 8, 8: Servo 9, 9: Servo 10, 10: Servo 11, 11: Servo 12, 12: Servo 13, 13: Servo 14, 14: Servo 15
     AP_GROUPINFO("ONESHOT_MASK", 32, ParametersG2, oneshot_mask, 0),
+
+#if AP_SCRIPTING_ENABLED
+    // @Group: FOLL
+    // @Path: ../libraries/AP_Follow/AP_Follow.cpp
+    AP_SUBGROUPINFO(follow, "FOLL", 33, ParametersG2, AP_Follow),
+#endif
     
     AP_GROUPEND
 };
@@ -1360,9 +1364,6 @@ void Plane::load_parameters(void)
         
     SRV_Channels::upgrade_parameters();
 
-    // possibly convert elevon and vtail mixers
-    convert_mixers();
-
 #if HAL_QUADPLANE_ENABLED
     if (quadplane.enable) {
         // quadplanes needs a higher loop rate
@@ -1491,115 +1492,15 @@ void Plane::load_parameters(void)
     }
 #endif
 
+#if AP_AIRSPEED_ENABLED
+    // PARAMETER_CONVERSION - Added: Jan-2022
+    {
+        const uint16_t old_key = g.k_param_airspeed;
+        const uint16_t old_index = 0;       // Old parameter index in the tree
+        const uint16_t old_top_element = 0; // Old group element in the tree for the first subgroup element (see AP_PARAM_KEY_DUMP)
+        AP_Param::convert_class(old_key, &airspeed, airspeed.var_info, old_index, old_top_element, true);
+    }
+#endif
+
     hal.console->printf("load_all took %uus\n", (unsigned)(micros() - before));
-}
-
-/*
-  convert from old ELEVON_OUTPUT and VTAIL_OUTPUT mixers to function
-  based mixing
- */
-void Plane::convert_mixers(void)
-{
-    AP_Int8 elevon_output;
-    AP_Int8 vtail_output;
-    AP_Param::ConversionInfo elevon_info = {
-        Parameters::k_param_elevon_output,
-        0,
-        AP_PARAM_INT8,
-        nullptr
-    };
-    AP_Param::ConversionInfo vtail_info = {
-        Parameters::k_param_vtail_output,
-        0,
-        AP_PARAM_INT8,
-        nullptr
-    };
-    SRV_Channel *chan1 = SRV_Channels::srv_channel(CH_1);
-    SRV_Channel *chan2 = SRV_Channels::srv_channel(CH_2);
-    SRV_Channel *chan4 = SRV_Channels::srv_channel(CH_4);
-
-    if (AP_Param::find_old_parameter(&vtail_info, &vtail_output) &&
-        vtail_output.get() != 0 &&
-        chan2->get_function() == SRV_Channel::k_elevator &&
-        chan4->get_function() == SRV_Channel::k_rudder &&
-        !chan2->function_configured() &&
-        !chan4->function_configured()) {
-        hal.console->printf("Converting vtail_output %u\n", vtail_output.get());
-        switch (vtail_output) {
-        case MIXING_UPUP:
-        case MIXING_UPUP_SWP:
-            chan2->reversed_set_and_save_ifchanged(false);
-            chan4->reversed_set_and_save_ifchanged(false);
-            break;
-        case MIXING_UPDN:
-        case MIXING_UPDN_SWP:
-            chan2->reversed_set_and_save_ifchanged(false);
-            chan4->reversed_set_and_save_ifchanged(true);
-            break;
-        case MIXING_DNUP:
-        case MIXING_DNUP_SWP:
-            chan2->reversed_set_and_save_ifchanged(true);
-            chan4->reversed_set_and_save_ifchanged(false);
-            break;
-        case MIXING_DNDN:
-        case MIXING_DNDN_SWP:
-            chan2->reversed_set_and_save_ifchanged(true);
-            chan4->reversed_set_and_save_ifchanged(true);
-            break;
-        }
-        if (vtail_output < MIXING_UPUP_SWP) {
-            chan2->function_set_and_save(SRV_Channel::k_vtail_right);
-            chan4->function_set_and_save(SRV_Channel::k_vtail_left);
-        } else {
-            chan2->function_set_and_save(SRV_Channel::k_vtail_left);
-            chan4->function_set_and_save(SRV_Channel::k_vtail_right);
-        }
-    } else if (AP_Param::find_old_parameter(&elevon_info, &elevon_output) &&
-        elevon_output.get() != 0 &&
-        chan1->get_function() == SRV_Channel::k_aileron &&
-        chan2->get_function() == SRV_Channel::k_elevator &&
-        !chan1->function_configured() &&
-        !chan2->function_configured()) {
-        hal.console->printf("convert elevon_output %u\n", elevon_output.get());
-        switch (elevon_output) {
-        case MIXING_UPUP:
-        case MIXING_UPUP_SWP:
-            chan2->reversed_set_and_save_ifchanged(false);
-            chan1->reversed_set_and_save_ifchanged(false);
-            break;
-        case MIXING_UPDN:
-        case MIXING_UPDN_SWP:
-            chan2->reversed_set_and_save_ifchanged(false);
-            chan1->reversed_set_and_save_ifchanged(true);
-            break;
-        case MIXING_DNUP:
-        case MIXING_DNUP_SWP:
-            chan2->reversed_set_and_save_ifchanged(true);
-            chan1->reversed_set_and_save_ifchanged(false);
-            break;
-        case MIXING_DNDN:
-        case MIXING_DNDN_SWP:
-            chan2->reversed_set_and_save_ifchanged(true);
-            chan1->reversed_set_and_save_ifchanged(true);
-            break;
-        }
-        if (elevon_output < MIXING_UPUP_SWP) {
-            chan1->function_set_and_save(SRV_Channel::k_elevon_right);
-            chan2->function_set_and_save(SRV_Channel::k_elevon_left);
-        } else {
-            chan1->function_set_and_save(SRV_Channel::k_elevon_left);
-            chan2->function_set_and_save(SRV_Channel::k_elevon_right);
-        }
-    }
-
-    // convert any k_aileron_with_input to aileron and k_elevator_with_input to k_elevator
-    for (uint8_t i=0; i<NUM_SERVO_CHANNELS; i++) {
-        SRV_Channel *chan = SRV_Channels::srv_channel(i);
-        if (chan->get_function() == SRV_Channel::k_aileron_with_input) {
-            chan->function_set_and_save(SRV_Channel::k_aileron);
-        } else if (chan->get_function() == SRV_Channel::k_elevator_with_input) {
-            chan->function_set_and_save(SRV_Channel::k_elevator);
-        }
-    }
-    
 }

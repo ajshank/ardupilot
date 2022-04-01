@@ -18,6 +18,9 @@ APJ_BOARD_ID 140
 
 FLASH_SIZE_KB 2048
 
+# supports upto 8MBits/s
+CANFD_SUPPORTED 8
+
 # with 2M flash we can afford to optimize for speed
 env OPTIMIZE -O2
 
@@ -330,3 +333,6 @@ ROMFS io_firmware.bin Tools/IO_Firmware/iofirmware_highpolh.bin
 
 DMA_NOSHARE SPI1* SPI4* USART6*
 
+# for users who have replaced their CubeSolo with a CubeOrange:
+define HAL_OREO_LED_ENABLED 1
+define HAL_SOLO_GIMBAL_ENABLED HAL_MOUNT_ENABLED

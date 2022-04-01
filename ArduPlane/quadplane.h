@@ -13,6 +13,7 @@
 #include <AC_AttitudeControl/AC_AttitudeControl_Multi.h> // Attitude control library
 #include <AP_InertialNav/AP_InertialNav.h>
 #include <AC_AttitudeControl/AC_PosControl.h>
+#include <AC_AttitudeControl/AC_WeatherVane.h>
 #include <AC_WPNav/AC_WPNav.h>
 #include <AC_WPNav/AC_Loiter.h>
 #include <AC_Fence/AC_Fence.h>
@@ -107,6 +108,7 @@ public:
     bool verify_vtol_land(void);
     bool in_vtol_auto(void) const;
     bool in_vtol_mode(void) const;
+    bool in_vtol_takeoff(void) const;
     bool in_vtol_posvel_mode(void) const;
     void update_throttle_hover();
     bool show_vtol_view() const;
@@ -162,6 +164,9 @@ public:
     };
     void set_q_assist_state(Q_ASSIST_STATE_ENUM state) {q_assist_state = state;};
 
+    // called when we change mode (for any mode, not just Q modes)
+    void mode_enter(void);
+
 private:
     AP_AHRS &ahrs;
     AP_Vehicle::MultiCopter aparm;
@@ -215,7 +220,7 @@ private:
     float get_pilot_input_yaw_rate_cds(void) const;
 
     // get overall desired yaw rate in cd/s
-    float get_desired_yaw_rate_cds(void);
+    float get_desired_yaw_rate_cds(bool weathervane=true);
     
     // get desired climb rate in cm/s
     float get_pilot_desired_climb_rate_cms(void) const;
@@ -260,12 +265,13 @@ private:
     void update_throttle_suppression(void);
 
     void run_z_controller(void);
-    void run_xy_controller(void);
+    void run_xy_controller(float accel_limit=0.0);
 
     void setup_defaults(void);
 
     // calculate a stopping distance for fixed-wing to vtol transitions
-    float stopping_distance(float ground_speed_squared);
+    float stopping_distance(float ground_speed_squared) const;
+    float accel_needed(float stop_distance, float ground_speed_squared) const;
     float stopping_distance(void);
 
     // distance below which we don't do approach, based on stopping
@@ -278,8 +284,17 @@ private:
     // transition deceleration, m/s/s
     AP_Float transition_decel;
 
-    // transition failure milliseconds
-    AP_Int16 transition_failure;
+    // transition failure handling
+    struct TRANS_FAIL {
+        enum ACTION {
+            QLAND,
+            QRTL
+        };
+        AP_Int16 timeout;
+        AP_Enum<ACTION> action;
+        bool warned;
+    } transition_failure;
+
 
     // Quadplane trim, degrees
     AP_Float ahrs_trim_pitch;
@@ -363,19 +378,11 @@ private:
         float last_pct;
     } vel_forward;
 
-    struct {
-        AP_Float gain;
-        AP_Float min_roll;
-        uint32_t last_pilot_input_ms;
-        float last_output;
-    } weathervane;
-    
+    AC_WeatherVane *weathervane;
+
     bool initialised;
 
     Location last_auto_target;
-
-    // pitch when we enter loiter mode
-    int32_t loiter_initial_pitch_cd;
 
     // when did we last run the attitude controller?
     uint32_t last_att_control_ms;
@@ -400,6 +407,9 @@ private:
         uint32_t lower_limit_start_ms;
         uint32_t land_start_ms;
         float vpos_start_m;
+
+        // landing detection threshold in meters
+        AP_Float detect_alt_change;
     } landing_detect;
 
     // throttle mix acceleration filter
@@ -428,6 +438,7 @@ private:
             return AP_HAL::millis() - last_state_change_ms;
         }
         Vector3p target_cm;
+        Vector2f xy_correction;
         Vector3f target_vel_cms;
         bool slow_descent:1;
         bool pilot_correction_active;
@@ -436,7 +447,13 @@ private:
         uint32_t last_log_ms;
         bool reached_wp_speed;
         uint32_t last_run_ms;
-        float pos1_start_speed;
+        float pos1_speed_limit;
+        bool done_accel_init;
+        Vector2f velocity_match;
+        uint32_t last_velocity_match_ms;
+        float target_speed;
+        float target_accel;
+        uint32_t last_pos_reset_ms;
     private:
         uint32_t last_state_change_ms;
         enum position_control_state state;
@@ -505,6 +522,7 @@ private:
         OPTION_DISABLE_APPROACH=(1<<16),
         OPTION_REPOSITION_LANDING=(1<<17),
         OPTION_ONLY_ARM_IN_QMODE_OR_AUTO=(1<<18),
+        OPTION_TRANS_FAIL_TO_FW=(1<<19),
     };
 
     AP_Float takeoff_failure_scalar;
@@ -558,6 +576,11 @@ private:
       see if we are in the VTOL position control phase of a landing
     */
     bool in_vtol_land_poscontrol(void) const;
+
+    /*
+      are we in the airbrake phase of a VTOL landing?
+     */
+    bool in_vtol_airbrake(void) const;
     
     // Q assist state, can be enabled, disabled or force. Default to enabled
     Q_ASSIST_STATE_ENUM q_assist_state = Q_ASSIST_STATE_ENUM::Q_ASSIST_ENABLED;

@@ -2,10 +2,13 @@
 
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Param/AP_Param.h>
-#include <Filter/Filter.h>
 #include <Filter/DerivativeFilter.h>
 #include <AP_MSP/msp.h>
 #include <AP_ExternalAHRS/AP_ExternalAHRS.h>
+
+#ifndef AP_SIM_BARO_ENABLED
+#define AP_SIM_BARO_ENABLED AP_SIM_ENABLED
+#endif
 
 #ifndef HAL_MSP_BARO_ENABLED
 #define HAL_MSP_BARO_ENABLED HAL_MSP_SENSORS_ENABLED

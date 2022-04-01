@@ -217,7 +217,7 @@ void AP_L1_Control::update_waypoint(const struct Location &prev_WP, const struct
     float K_L1 = 4.0f * _L1_damping * _L1_damping;
 
     // Get current position and velocity
-    if (_ahrs.get_position(_current_loc) == false) {
+    if (_ahrs.get_location(_current_loc) == false) {
         // if no GPS loc available, maintain last nav/target_bearing
         _data_is_stale = true;
         return;
@@ -313,7 +313,7 @@ void AP_L1_Control::update_waypoint(const struct Location &prev_WP, const struct
         Nu1 += _L1_xtrack_i;
 
         Nu = Nu1 + Nu2;
-        _nav_bearing = atan2f(AB.y, AB.x) + Nu1; // bearing (radians) from AC to L1 point
+        _nav_bearing = wrap_PI(atan2f(AB.y, AB.x) + Nu1);   // bearing (radians) from AC to L1 point
     }
 
     _prevent_indecision(Nu);
@@ -349,7 +349,7 @@ void AP_L1_Control::update_loiter(const struct Location &center_WP, float radius
     float K_L1 = 4.0f * _L1_damping * _L1_damping;
 
     //Get current position and velocity
-    if (_ahrs.get_position(_current_loc) == false) {
+    if (_ahrs.get_location(_current_loc) == false) {
         // if no GPS loc available, maintain last nav/target_bearing
         _data_is_stale = true;
         return;

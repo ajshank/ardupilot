@@ -62,6 +62,9 @@ bool AP_Arming_Copter::run_pre_arm_checks(bool display_failure)
         & gcs_failsafe_check(display_failure)
         & winch_checks(display_failure)
         & alt_checks(display_failure)
+#if AP_AIRSPEED_ENABLED
+        & AP_Arming::airspeed_checks(display_failure)
+#endif
         & AP_Arming::pre_arm_checks(display_failure);
 }
 
@@ -639,12 +642,8 @@ bool AP_Arming_Copter::arm_checks(AP_Arming::Method method)
         return false;
     }
 
-    // if we are not using Emergency Stop switch option, force Estop false to ensure motors
-    // can run normally
-    if (!rc().find_channel_for_option(RC_Channel::AUX_FUNC::MOTOR_ESTOP)){
-        SRV_Channels::set_emergency_stop(false);
-        // if we are using motor Estop switch, it must not be in Estop position
-    } else if (SRV_Channels::get_emergency_stop()){
+    // if we are using motor Estop switch, it must not be in Estop position
+    if (SRV_Channels::get_emergency_stop()){
         check_failed(true, "Motor Emergency Stopped");
         return false;
     }

@@ -17,11 +17,7 @@
 #include "hwing_esc.h"
 #include <AP_CANManager/AP_CANManager.h>
 #include <AP_Scripting/AP_Scripting.h>
-#if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
-#include <AP_HAL_ChibiOS/CANIface.h>
-#elif CONFIG_HAL_BOARD == HAL_BOARD_SITL
-#include <AP_HAL_SITL/CANSocketIface.h>
-#endif
+#include <AP_HAL/CANIface.h>
 
 #if HAL_GCS_ENABLED
 #include "GCS_MAVLink.h"
@@ -57,6 +53,10 @@ void stm32_watchdog_pat();
  */
 extern const struct app_descriptor app_descriptor;
 
+extern "C" {
+void can_printf(const char *fmt, ...) FMT_PRINTF(1,2);
+}
+
 class AP_Periph_FW {
 public:
     AP_Periph_FW();
@@ -89,6 +89,7 @@ public:
 
     void load_parameters();
     void prepare_reboot();
+    bool canfdout() const { return (g.can_fdmode == 1); }
 
 #ifdef HAL_PERIPH_LISTEN_FOR_SERIAL_UART_REBOOT_CMD_PORT
     void check_for_serial_reboot_cmd(const int8_t serial_index);
@@ -247,13 +248,20 @@ public:
     uint32_t last_gps_update_ms;
     uint32_t last_baro_update_ms;
     uint32_t last_airspeed_update_ms;
+    bool saw_gps_lock_once;
 
     static AP_Periph_FW *_singleton;
+
+    enum {
+        DEBUG_SHOW_STACK,
+        DEBUG_AUTOREBOOT
+    };
 
     // show stack as DEBUG msgs
     void show_stack_free();
 
     static bool no_iface_finished_dna;
+    static constexpr auto can_printf = ::can_printf;
 };
 
 namespace AP
@@ -263,7 +271,4 @@ namespace AP
 
 extern AP_Periph_FW periph;
 
-extern "C" {
-void can_printf(const char *fmt, ...) FMT_PRINTF(1,2);
-}
 

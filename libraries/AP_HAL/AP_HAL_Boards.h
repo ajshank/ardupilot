@@ -84,10 +84,6 @@
 #define HAL_BARO_20789_I2C_SPI  15
 #define HAL_BARO_LPS25H_IMU_I2C 17
 
-/* Compass driver types */
-#define HAL_COMPASS_NONE                0
-#define HAL_COMPASS_HIL_UNUSED          3  // unused
-
 /* Heat Types */
 #define HAL_LINUX_HEAT_PWM 1
 
@@ -200,10 +196,6 @@
 #define HAL_OS_FATFS_IO 0
 #endif
 
-#ifndef HAL_COMPASS_DEFAULT
-#define HAL_COMPASS_DEFAULT HAL_COMPASS_NONE
-#endif
-
 #ifndef HAL_BARO_DEFAULT
 #define HAL_BARO_DEFAULT HAL_BARO_NONE
 #endif
@@ -270,7 +262,7 @@
 #endif
 
 #ifndef HAL_WITH_MCU_MONITORING
-#define HAL_WITH_MCU_MONITORING defined(STM32H7)
+#define HAL_WITH_MCU_MONITORING 0
 #endif
 
 #ifndef HAL_HNF_MAX_FILTERS
@@ -290,4 +282,18 @@
 // plus one static notch with one harmonic
 #define HAL_HNF_MAX_FILTERS 18
 #endif
+#endif // HAL_HNF_MAX_FILTERS
+
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL // allow SITL to have all the CANFD options
+#define HAL_CANFD_SUPPORTED 8
+#elif !defined(HAL_CANFD_SUPPORTED)
+#define HAL_CANFD_SUPPORTED 0
+#endif
+
+#ifndef __RAMFUNC__
+#define __RAMFUNC__
+#endif
+
+#ifndef __FASTRAMFUNC__
+#define __FASTRAMFUNC__
 #endif

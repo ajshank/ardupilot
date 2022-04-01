@@ -25,6 +25,7 @@
 #include <GCS_MAVLink/GCS_Dummy.h>
 #include <AP_Filesystem/AP_Filesystem.h>
 #include <AP_Filesystem/posix_compat.h>
+#include <AP_AdvancedFailsafe/AP_AdvancedFailsafe.h>
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_LINUX
 #include <AP_HAL_Linux/Scheduler.h>
@@ -58,9 +59,11 @@ const AP_Param::Info ReplayVehicle::var_info[] = {
     // @Path: ../libraries/AP_AHRS/AP_AHRS.cpp
     GOBJECT(ahrs,                   "AHRS_",    AP_AHRS),
 
+#if AP_AIRSPEED_ENABLED
     // @Group: ARSPD_
     // @Path: ../libraries/AP_Airspeed/AP_Airspeed.cpp
     GOBJECT(airspeed,                               "ARSP_",   AP_Airspeed),
+#endif
 
     // @Group: EK2_
     // @Path: ../libraries/AP_NavEKF2/AP_NavEKF2.cpp

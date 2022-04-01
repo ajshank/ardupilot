@@ -18,6 +18,7 @@
 
 #include "AP_InertialSensor.h"
 #include "AP_InertialSensor_BMI160.h"
+#include "AP_InertialSensor_BMI270.h"
 #include "AP_InertialSensor_Backend.h"
 #include "AP_InertialSensor_L3G4200D.h"
 #include "AP_InertialSensor_LSM9DS0.h"
@@ -745,7 +746,7 @@ bool AP_InertialSensor::register_accel(uint8_t &instance, uint16_t raw_sample_ra
 
     _accel_id[_accel_count].set((int32_t) id);
 
-#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL || (CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS && AP_SIM_ENABLED)
         // assume this is the same sensor and save its ID to allow seamless
         // transition from when we didn't have the IDs.
         _accel_id_ok[_accel_count] = true;
@@ -985,9 +986,9 @@ AP_InertialSensor::detect_backends(void)
     }
 #endif
 
-    uint8_t probe_count = 0;
-    uint8_t enable_mask = uint8_t(_enable_mask.get());
-    uint8_t found_mask = 0;
+    uint8_t probe_count __attribute__((unused)) = 0;
+    uint8_t enable_mask __attribute__((unused)) = uint8_t(_enable_mask.get());
+    uint8_t found_mask __attribute__((unused)) = 0;
 
     /*
       use ADD_BACKEND() macro to allow for INS_ENABLE_MASK for enabling/disabling INS backends
@@ -1010,13 +1011,16 @@ AP_InertialSensor::detect_backends(void)
     }
 #endif
 
-#if defined(HAL_INS_PROBE_LIST)
-    // IMUs defined by IMU lines in hwdef.dat
-    HAL_INS_PROBE_LIST;
-#elif CONFIG_HAL_BOARD == HAL_BOARD_SITL
+#if AP_SIM_INS_ENABLED
     for (uint8_t i=0; i<AP::sitl()->imu_count; i++) {
         ADD_BACKEND(AP_InertialSensor_SITL::detect(*this, i==1?INS_SITL_SENSOR_B:INS_SITL_SENSOR_A));
     }
+    return;
+#endif
+
+#if defined(HAL_INS_PROBE_LIST)
+    // IMUs defined by IMU lines in hwdef.dat
+    HAL_INS_PROBE_LIST;
 #if defined(HAL_SITL_INVENSENSEV3)
     ADD_BACKEND(AP_InertialSensor_Invensensev3::probe(*this, hal.i2c_mgr->get_device(1, 1), ROTATION_NONE));
 #endif
@@ -1956,7 +1960,15 @@ bool AP_InertialSensor::is_still()
 // return true if we are in a calibration
 bool AP_InertialSensor::calibrating() const
 {
-    return _calibrating_accel || _calibrating_gyro || (_acal && _acal->running());
+    if (_calibrating_accel || _calibrating_gyro) {
+        return true;
+    }
+#if HAL_INS_ACCELCAL_ENABLED
+    if (_acal && _acal->running()) {
+        return true;
+    }
+#endif
+    return false;
 }
 
 /// calibrating - returns true if a temperature calibration is running
@@ -1972,6 +1984,7 @@ bool AP_InertialSensor::temperature_cal_running() const
     return false;
 }
 
+#if HAL_INS_ACCELCAL_ENABLED
 // initialise and register accel calibrator
 // called during the startup of accel cal
 void AP_InertialSensor::acal_init()
@@ -1999,6 +2012,7 @@ void AP_InertialSensor::acal_update()
         _acal->cancel();
     }
 }
+#endif
 
 // Update the harmonic notch frequency
 void AP_InertialSensor::update_harmonic_notch_freq_hz(float scaled_freq) {
@@ -2129,11 +2143,7 @@ bool AP_InertialSensor::get_fixed_mount_accel_cal_sample(uint8_t sample_num, Vec
         return false;
     }
     _accel_calibrator[_acc_body_aligned-1].get_sample_corrected(sample_num, ret);
-    if (_board_orientation == ROTATION_CUSTOM && _custom_rotation) {
-        ret = *_custom_rotation * ret;
-    } else {
-        ret.rotate(_board_orientation);
-    }
+    ret.rotate(_board_orientation);
     return true;
 }
 
@@ -2158,11 +2168,7 @@ bool AP_InertialSensor::get_primary_accel_cal_sample_avg(uint8_t sample_num, Vec
     }
     avg /= count;
     ret = avg;
-    if (_board_orientation == ROTATION_CUSTOM && _custom_rotation) {
-        ret = *_custom_rotation * ret;
-    } else {
-        ret.rotate(_board_orientation);
-    }
+    ret.rotate(_board_orientation);
     return true;
 }
 

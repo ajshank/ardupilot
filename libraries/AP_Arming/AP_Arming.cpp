@@ -17,6 +17,7 @@
 #include <AP_HAL/AP_HAL.h>
 #include <AP_BoardConfig/AP_BoardConfig.h>
 #include <AP_BattMonitor/AP_BattMonitor.h>
+#include <AP_Compass/AP_Compass.h>
 #include <AP_Notify/AP_Notify.h>
 #include <GCS_MAVLink/GCS.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
@@ -226,6 +227,7 @@ bool AP_Arming::barometer_checks(bool report)
 
 bool AP_Arming::airspeed_checks(bool report)
 {
+#if AP_AIRSPEED_ENABLED
     if ((checks_to_perform & ARMING_CHECK_ALL) ||
         (checks_to_perform & ARMING_CHECK_AIRSPEED)) {
         const AP_Airspeed *airspeed = AP_Airspeed::get_singleton();
@@ -240,6 +242,7 @@ bool AP_Arming::airspeed_checks(bool report)
             }
         }
     }
+#endif
 
     return true;
 }
@@ -539,7 +542,7 @@ bool AP_Arming::gps_checks(bool report)
         // check AHRS and GPS are within 10m of each other
         const Location gps_loc = gps.location();
         Location ahrs_loc;
-        if (AP::ahrs().get_position(ahrs_loc)) {
+        if (AP::ahrs().get_location(ahrs_loc)) {
             const float distance = gps_loc.get_distance(ahrs_loc);
             if (distance > AP_ARMING_AHRS_GPS_ERROR_MAX) {
                 check_failed(ARMING_CHECK_GPS, report, "GPS and AHRS differ by %4.1fm", (double)distance);
@@ -755,7 +758,7 @@ bool AP_Arming::mission_checks(bool report)
         }
         if (_required_mission_items & MIS_ITEM_CHECK_RALLY) {
             Location ahrs_loc;
-            if (!AP::ahrs().get_position(ahrs_loc)) {
+            if (!AP::ahrs().get_location(ahrs_loc)) {
                 check_failed(ARMING_CHECK_MISSION, report, "Can't check rally without position");
                 return false;
             }
@@ -794,7 +797,7 @@ bool AP_Arming::servo_checks(bool report) const
     bool check_passed = true;
     for (uint8_t i = 0; i < NUM_SERVO_CHANNELS; i++) {
         const SRV_Channel *c = SRV_Channels::srv_channel(i);
-        if (c == nullptr || c->get_function() == SRV_Channel::k_none) {
+        if (c == nullptr || c->get_function() <= SRV_Channel::k_none) {
             continue;
         }
 
@@ -1106,7 +1109,7 @@ bool AP_Arming::fettec_checks(bool display_failure) const
         return true;
     }
 
-    // check camera is ready
+    // check ESCs are ready
     char fail_msg[MAVLINK_MSG_STATUSTEXT_FIELD_TEXT_LEN+1];
     if (!f->pre_arm_check(fail_msg, ARRAY_SIZE(fail_msg))) {
         check_failed(ARMING_CHECK_ALL, display_failure, "FETtec: %s", fail_msg);
@@ -1362,27 +1365,21 @@ bool AP_Arming::arm(AP_Arming::Method method, const bool do_arming_checks)
         armed = false;
     }
 
-#if HAL_LOGGER_FILE_CONTENTS_ENABLED
-    /*
-      log files useful for diagnostics on arming. We log on arming as
-      with LOG_DISARMED we don't want to log the statistics at boot or
-      we wouldn't get a realistic idea of key system values
-      Note that some of these files may not exist, in that case they
-      are ignored
-     */
-    static const char *log_content_filenames[] = {
-        "@SYS/uarts.txt",
-        "@SYS/dma.txt",
-        "@SYS/memory.txt",
-        "@SYS/threads.txt",
-        "@ROMFS/hwdef.dat",
-        "@SYS/storage.bin",
-        "@SYS/crash_dump.bin",
-    };
-    for (const auto *name : log_content_filenames) {
-        AP::logger().log_file_content(name);
+    if (armed && do_arming_checks && checks_to_perform == 0) {
+        gcs().send_text(MAV_SEVERITY_WARNING, "Warning: Arming Checks Disabled");
+    }
+
+#if AP_TERRAIN_AVAILABLE
+    if (armed) {
+        // tell terrain we have just armed, so it can setup
+        // a reference location for terrain adjustment
+        auto *terrain = AP::terrain();
+        if (terrain != nullptr) {
+            terrain->set_reference_location();
+        }
     }
 #endif
+
     return armed;
 }
 

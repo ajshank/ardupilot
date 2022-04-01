@@ -140,11 +140,20 @@ float Plane::mode_auto_target_airspeed_cm()
 
 void Plane::calc_airspeed_errors()
 {
+    // Get the airspeed_estimate, update smoothed airspeed estimate
+    // NOTE:  we use the airspeed estimate function not direct sensor
+    //        as TECS may be using synthetic airspeed
     float airspeed_measured = 0;
+    if (ahrs.airspeed_estimate(airspeed_measured)) {
+        smoothed_airspeed = smoothed_airspeed * 0.8f + airspeed_measured * 0.2f;
+    }
 
-    // we use the airspeed estimate function not direct sensor as TECS
-    // may be using synthetic airspeed
-    ahrs.airspeed_estimate(airspeed_measured);
+    // low pass filter speed scaler, with 1Hz cutoff, at 10Hz
+    const float speed_scaler = calc_speed_scaler();
+    const float cutoff_Hz = 2.0;
+    const float dt = 0.1;
+    surface_speed_scaler += calc_lowpass_alpha_dt(dt, cutoff_Hz) * (speed_scaler - surface_speed_scaler);
+
 
     // FBW_B/cruise airspeed target
     if (!failsafe.rc_failsafe && (control_mode == &mode_fbwb || control_mode == &mode_cruise)) {
@@ -156,10 +165,10 @@ void Plane::calc_airspeed_errors()
             const float control_max = channel_throttle->get_range();
             const float control_in = get_throttle_input();
             switch (channel_throttle->get_type()) {
-                case RC_Channel::RC_CHANNEL_TYPE_ANGLE:
+            case RC_Channel::ControlType::ANGLE:
                     control_min = -control_max;
                     break;
-                case RC_Channel::RC_CHANNEL_TYPE_RANGE:
+            case RC_Channel::ControlType::RANGE:
                     control_mid = channel_throttle->get_control_mid();
                     break;
             }
@@ -371,7 +380,7 @@ void Plane::update_fbwb_speed_height(void)
 
         target_altitude.last_elev_check_us = now;
 
-        float elevator_input = channel_pitch->get_control_in() / 4500.0f;
+        float elevator_input = channel_pitch->get_control_in() * (1/4500.0);
 
         if (g.flybywire_elev_reverse) {
             elevator_input = -elevator_input;

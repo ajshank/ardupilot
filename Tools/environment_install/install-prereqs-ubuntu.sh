@@ -76,6 +76,11 @@ elif [ ${RELEASE_CODENAME} == 'focal' ] || [ ${RELEASE_CODENAME} == 'ulyssa' ]; 
     SITLCFML_VERSION="2.5"
     PYTHON_V="python3"
     PIP=pip3
+elif [ ${RELEASE_CODENAME} == 'jammy' ]; then
+    SITLFML_VERSION="2.5"
+    SITLCFML_VERSION="2.5"
+    PYTHON_V="python3"
+    PIP=pip3
 elif [ ${RELEASE_CODENAME} == 'groovy' ] ||
          [ ${RELEASE_CODENAME} == 'hirsute' ] ||
          [ ${RELEASE_CODENAME} == 'bullseye' ] ||
@@ -113,7 +118,7 @@ if [ "$ARM_PKG_CONFIG_NOT_PRESENT" -eq 1 ]; then
     $APT_GET install pkg-config
     if [ -f /usr/share/pkg-config-crosswrapper ]; then
         # We are on non-Ubuntu so simulate effect of installing pkg-config-arm-linux-gnueabihf.
-        sudo ln -s /usr/share/pkg-config-crosswrapper /usr/bin/arm-linux-gnueabihf-pkg-config
+        sudo ln -sf /usr/share/pkg-config-crosswrapper /usr/bin/arm-linux-gnueabihf-pkg-config
     else
         echo "Warning: unable to link to pkg-config-crosswrapper"
     fi
@@ -133,7 +138,11 @@ fi
 
 # add some Python packages required for commonly-used MAVProxy modules and hex file generation:
 if [[ $SKIP_AP_EXT_ENV -ne 1 ]]; then
-  PYTHON_PKGS="$PYTHON_PKGS pygame intelhex"
+    if [ ${RELEASE_CODENAME} == 'xenial' ] || [ ${RELEASE_CODENAME} == 'disco' ] || [ ${RELEASE_CODENAME} == 'eoan' ]; then
+        PYTHON_PKGS="$PYTHON_PKGS pygame==2.0.3 intelhex"
+    else
+        PYTHON_PKGS="$PYTHON_PKGS pygame intelhex"
+    fi
 fi
 ARM_LINUX_PKGS="g++-arm-linux-gnueabihf $INSTALL_PKG_CONFIG"
 # python-wxgtk packages are added to SITL_PKGS below
@@ -198,6 +207,7 @@ then
 elif [ ${RELEASE_CODENAME} == 'groovy' ] ||
          [ ${RELEASE_CODENAME} == 'hirsute' ] ||
          [ ${RELEASE_CODENAME} == 'bullseye' ] ||
+         [ ${RELEASE_CODENAME} == 'jammy' ] ||
          [ ${RELEASE_CODENAME} == 'impish' ]; then
     BASE_PKGS+=" python-is-python3"
     SITL_PKGS+=" libpython3-stdlib" # for argparse
@@ -229,6 +239,7 @@ if [[ $SKIP_AP_GRAPHIC_ENV -ne 1 ]]; then
          [ ${RELEASE_CODENAME} == 'hirsute' ] ||
          [ ${RELEASE_CODENAME} == 'focal' ] ||
          [ ${RELEASE_CODENAME} == 'ulyssa' ] ||
+         [ ${RELEASE_CODENAME} == 'jammy' ] ||
          [ ${RELEASE_CODENAME} == 'impish' ]; then
     SITL_PKGS+=" python3-wxgtk4.0"
     SITL_PKGS+=" fonts-freefont-ttf libfreetype6-dev libpng16-16 libportmidi-dev libsdl-image1.2-dev libsdl-mixer1.2-dev libsdl-ttf2.0-dev libsdl1.2-dev"  # for pygame

@@ -53,7 +53,7 @@ template <typename T>
 inline bool is_zero(const T fVal1) {
     static_assert(std::is_floating_point<T>::value || std::is_base_of<T,AP_Float>::value,
                   "Template parameter not of type float");
-    return (fabsf(static_cast<float>(fVal1)) < FLT_EPSILON);
+    return is_zero(static_cast<float>(fVal1));
 }
 
 /* 
@@ -75,14 +75,6 @@ inline bool is_negative(const T fVal1) {
     static_assert(std::is_floating_point<T>::value || std::is_base_of<T,AP_Float>::value,
                   "Template parameter not of type float");
     return (static_cast<float>(fVal1) <= (-1.0 * FLT_EPSILON));
-}
-
-
-/*
- * @brief: Check whether a double is zero
- */
-inline bool is_zero(const double fVal1) {
-    return (fabsf(fVal1) < static_cast<double>(FLT_EPSILON));
 }
 
 /*
@@ -215,6 +207,10 @@ ftype sq(const T val)
     ftype v = static_cast<ftype>(val);
     return v*v;
 }
+static inline constexpr float sq(const float val)
+{
+    return val*val;
+}
 
 /*
  * Variadic template for calculating the square norm of a vector of any
@@ -345,3 +341,7 @@ uint16_t float2fixed(const float input, const uint8_t fractional_bits = 8);
   fixed wing aircraft
  */
 float fixedwing_turn_rate(float bank_angle_deg, float airspeed);
+
+// convert degrees farenheight to Kelvin
+float degF_to_Kelvin(float temp_f);
+

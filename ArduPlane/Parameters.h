@@ -196,7 +196,7 @@ public:
         k_param_sonar_enabled_old,  // unused
         k_param_ahrs,  // AHRS group
         k_param_barometer,   // barometer ground calibration
-        k_param_airspeed,  // AP_Airspeed parameters
+        k_param_airspeed,           // only used for parameter conversion; AP_Airspeed parameters moved to AP_Vehicle
         k_param_curr_amp_offset,
         k_param_NavEKF,  // deprecated - remove
         k_param_mission, // mission library
@@ -362,7 +362,7 @@ public:
     AP_Int16 sysid_my_gcs;
     AP_Int8 telem_delay;
 
-    AP_Int8  rtl_autoland;
+    AP_Enum<RtlAutoland> rtl_autoland;
 
     AP_Int8  crash_accel_threshold;
 
@@ -545,6 +545,9 @@ public:
     AC_PID guidedHeading{5000.0,  0.0,   0.0, 0 ,  10.0,   5.0,  5.0 ,  5.0  , 0.2};
 #endif
 
+#if AP_SCRIPTING_ENABLED
+    AP_Follow follow;
+#endif
 
     AP_Float        fs_ekf_thresh;
 

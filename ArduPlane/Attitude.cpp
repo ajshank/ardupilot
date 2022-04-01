@@ -1,11 +1,11 @@
 #include "Plane.h"
 
 /*
-  get a speed scaling number for control surfaces. This is applied to
-  PIDs to change the scaling of the PID with speed. At high speed we
-  move the surfaces less, and at low speeds we move them more.
+  calculate speed scaling number for control surfaces. This is applied
+  to PIDs to change the scaling of the PID with speed. At high speed
+  we move the surfaces less, and at low speeds we move them more.
  */
-float Plane::get_speed_scaler(void)
+float Plane::calc_speed_scaler(void)
 {
     float aspeed, speed_scaler;
     if (ahrs.airspeed_estimate(aspeed)) {
@@ -61,6 +61,10 @@ float Plane::get_speed_scaler(void)
  */
 bool Plane::stick_mixing_enabled(void)
 {
+    if (!rc().has_valid_input()) {
+        // never stick mix without valid RC
+        return false;
+    }
 #if AC_FENCE == ENABLED
     const bool stickmixing = fence_stickmixing();
 #else
@@ -81,10 +85,7 @@ bool Plane::stick_mixing_enabled(void)
         // we're in an auto mode. Check the stick mixing flag
         if (g.stick_mixing != StickMixing::NONE &&
             g.stick_mixing != StickMixing::VTOL_YAW &&
-            stickmixing &&
-            failsafe.state == FAILSAFE_NONE &&
-            !rc_failsafe_active()) {
-            // we're in an auto mode, and haven't triggered failsafe
+            stickmixing) {
             return true;
         } else {
             return false;
@@ -258,7 +259,6 @@ void Plane::stabilize_stick_mixing_fbw()
         control_mode == &mode_qhover ||
         control_mode == &mode_qloiter ||
         control_mode == &mode_qland ||
-        control_mode == &mode_qrtl ||
         control_mode == &mode_qacro ||
 #if QAUTOTUNE_ENABLED
         control_mode == &mode_qautotune ||
@@ -496,6 +496,22 @@ void Plane::stabilize()
 
     if (control_mode == &mode_training) {
         stabilize_training(speed_scaler);
+#if AP_SCRIPTING_ENABLED
+    } else if ((control_mode == &mode_auto &&
+               mission.get_current_nav_cmd().id == MAV_CMD_NAV_SCRIPT_TIME) || (nav_scripting.enabled && nav_scripting.current_ms > 0)) {
+        // scripting is in control of roll and pitch rates and throttle
+        const float aileron = rollController.get_rate_out(nav_scripting.roll_rate_dps, speed_scaler);
+        const float elevator = pitchController.get_rate_out(nav_scripting.pitch_rate_dps, speed_scaler);
+        SRV_Channels::set_output_scaled(SRV_Channel::k_aileron, aileron);
+        SRV_Channels::set_output_scaled(SRV_Channel::k_elevator, elevator);
+        if (yawController.rate_control_enabled()) {
+            const float rudder = yawController.get_rate_out(nav_scripting.yaw_rate_dps, speed_scaler, false);
+            steering_control.rudder = rudder;
+        }
+        if (AP_HAL::millis() - nav_scripting.current_ms > 50) { //set_target_throttle_rate_rpy has not been called from script in last 50ms
+            nav_scripting.current_ms = 0;
+        }
+#endif
     } else if (control_mode == &mode_acro) {
         stabilize_acro(speed_scaler);
 #if HAL_QUADPLANE_ENABLED
@@ -509,19 +525,6 @@ void Plane::stabilize()
         } else {
             plane.stabilize_roll(speed_scaler);
             plane.stabilize_pitch(speed_scaler);
-        }
-#endif
-#if AP_SCRIPTING_ENABLED
-    } else if (control_mode == &mode_auto &&
-               mission.get_current_nav_cmd().id == MAV_CMD_NAV_SCRIPT_TIME) {
-        // scripting is in control of roll and pitch rates and throttle
-        const float aileron = rollController.get_rate_out(nav_scripting.roll_rate_dps, speed_scaler);
-        const float elevator = pitchController.get_rate_out(nav_scripting.pitch_rate_dps, speed_scaler);
-        SRV_Channels::set_output_scaled(SRV_Channel::k_aileron, aileron);
-        SRV_Channels::set_output_scaled(SRV_Channel::k_elevator, elevator);
-        if (yawController.rate_control_enabled()) {
-            const float rudder = yawController.get_rate_out(nav_scripting.yaw_rate_dps, speed_scaler, false);
-            steering_control.rudder = rudder;
         }
 #endif
     } else {

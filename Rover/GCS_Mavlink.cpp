@@ -206,7 +206,7 @@ void GCS_MAVLINK_Rover::send_pid_tuning()
 
     // speed to throttle PID
     if (g.gcs_pid_mask & 2) {
-        pid_info = &g2.attitude_control.get_throttle_speed_pid().get_pid_info();
+        pid_info = &g2.attitude_control.get_throttle_speed_pid_info();
         mavlink_msg_pid_tuning_send(chan, PID_TUNING_ACCZ,
                                     pid_info->target,
                                     pid_info->actual,
@@ -276,6 +276,40 @@ void GCS_MAVLINK_Rover::send_pid_tuning()
     if (g.gcs_pid_mask & 32) {
         pid_info = &g2.attitude_control.get_sailboat_heel_pid().get_pid_info();
         mavlink_msg_pid_tuning_send(chan, 9,
+                                    pid_info->target,
+                                    pid_info->actual,
+                                    pid_info->FF,
+                                    pid_info->P,
+                                    pid_info->I,
+                                    pid_info->D,
+                                    pid_info->slew_rate,
+                                    pid_info->Dmod);
+        if (!HAVE_PAYLOAD_SPACE(chan, PID_TUNING)) {
+            return;
+        }
+    }
+
+    // Position Controller Velocity North PID
+    if (g.gcs_pid_mask & 64) {
+        pid_info = &g2.pos_control.get_vel_pid().get_pid_info_x();
+        mavlink_msg_pid_tuning_send(chan, 10,
+                                    pid_info->target,
+                                    pid_info->actual,
+                                    pid_info->FF,
+                                    pid_info->P,
+                                    pid_info->I,
+                                    pid_info->D,
+                                    pid_info->slew_rate,
+                                    pid_info->Dmod);
+        if (!HAVE_PAYLOAD_SPACE(chan, PID_TUNING)) {
+            return;
+        }
+    }
+
+    // Position Controller Velocity East PID
+    if (g.gcs_pid_mask & 128) {
+        pid_info = &g2.pos_control.get_vel_pid().get_pid_info_y();
+        mavlink_msg_pid_tuning_send(chan, 11,
                                     pid_info->target,
                                     pid_info->actual,
                                     pid_info->FF,
@@ -384,6 +418,7 @@ const AP_Param::GroupInfo GCS_MAVLINK_Parameters::var_info[] = {
     // @Units: Hz
     // @Range: 0 50
     // @Increment: 1
+    // @RebootRequired: True
     // @User: Advanced
     AP_GROUPINFO("RAW_SENS", 0, GCS_MAVLINK_Parameters, streamRates[0],  1),
 
@@ -393,6 +428,7 @@ const AP_Param::GroupInfo GCS_MAVLINK_Parameters::var_info[] = {
     // @Units: Hz
     // @Range: 0 50
     // @Increment: 1
+    // @RebootRequired: True
     // @User: Advanced
     AP_GROUPINFO("EXT_STAT", 1, GCS_MAVLINK_Parameters, streamRates[1],  1),
 
@@ -402,6 +438,7 @@ const AP_Param::GroupInfo GCS_MAVLINK_Parameters::var_info[] = {
     // @Units: Hz
     // @Range: 0 50
     // @Increment: 1
+    // @RebootRequired: True
     // @User: Advanced
     AP_GROUPINFO("RC_CHAN",  2, GCS_MAVLINK_Parameters, streamRates[2],  1),
 
@@ -411,6 +448,7 @@ const AP_Param::GroupInfo GCS_MAVLINK_Parameters::var_info[] = {
     // @Units: Hz
     // @Range: 0 50
     // @Increment: 1
+    // @RebootRequired: True
     // @User: Advanced
     AP_GROUPINFO("RAW_CTRL", 3, GCS_MAVLINK_Parameters, streamRates[3],  1),
 
@@ -420,6 +458,7 @@ const AP_Param::GroupInfo GCS_MAVLINK_Parameters::var_info[] = {
     // @Units: Hz
     // @Range: 0 50
     // @Increment: 1
+    // @RebootRequired: True
     // @User: Advanced
     AP_GROUPINFO("POSITION", 4, GCS_MAVLINK_Parameters, streamRates[4],  1),
 
@@ -429,6 +468,7 @@ const AP_Param::GroupInfo GCS_MAVLINK_Parameters::var_info[] = {
     // @Units: Hz
     // @Range: 0 50
     // @Increment: 1
+    // @RebootRequired: True
     // @User: Advanced
     AP_GROUPINFO("EXTRA1",   5, GCS_MAVLINK_Parameters, streamRates[5],  1),
 
@@ -438,6 +478,7 @@ const AP_Param::GroupInfo GCS_MAVLINK_Parameters::var_info[] = {
     // @Units: Hz
     // @Range: 0 50
     // @Increment: 1
+    // @RebootRequired: True
     // @User: Advanced
     AP_GROUPINFO("EXTRA2",   6, GCS_MAVLINK_Parameters, streamRates[6],  1),
 
@@ -447,6 +488,7 @@ const AP_Param::GroupInfo GCS_MAVLINK_Parameters::var_info[] = {
     // @Units: Hz
     // @Range: 0 50
     // @Increment: 1
+    // @RebootRequired: True
     // @User: Advanced
     AP_GROUPINFO("EXTRA3",   7, GCS_MAVLINK_Parameters, streamRates[7],  1),
 
@@ -456,6 +498,7 @@ const AP_Param::GroupInfo GCS_MAVLINK_Parameters::var_info[] = {
     // @Units: Hz
     // @Range: 0 50
     // @Increment: 1
+    // @RebootRequired: True
     // @User: Advanced
     AP_GROUPINFO("PARAMS",   8, GCS_MAVLINK_Parameters, streamRates[8],  10),
 
@@ -465,6 +508,7 @@ const AP_Param::GroupInfo GCS_MAVLINK_Parameters::var_info[] = {
     // @Units: Hz
     // @Range: 0 50
     // @Increment: 1
+    // @RebootRequired: True
     // @User: Advanced
     AP_GROUPINFO("ADSB",   9, GCS_MAVLINK_Parameters, streamRates[9],  0),
 
@@ -563,11 +607,6 @@ bool GCS_MAVLINK_Rover::handle_guided_request(AP_Mission::Mission_Command &cmd)
 
     // make any new wp uploaded instant (in case we are already in Guided mode)
     return rover.mode_guided.set_desired_location(cmd.content.location);
-}
-
-void GCS_MAVLINK_Rover::handle_change_alt_request(AP_Mission::Mission_Command &cmd)
-{
-    // nothing to do
 }
 
 MAV_RESULT GCS_MAVLINK_Rover::_handle_command_preflight_calibration(const mavlink_command_long_t &packet)
@@ -704,19 +743,10 @@ MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_do_reposition(const mavlink_com
         return MAV_RESULT_DENIED;
     }
 
-    Location request_location {};
-    request_location.lat = packet.x;
-    request_location.lng = packet.y;
-
-    if (fabsf(packet.z) > LOCATION_ALT_MAX_M) {
+    Location requested_location {};
+    if (!location_from_command_t(packet, requested_location)) {
         return MAV_RESULT_DENIED;
     }
-
-    Location::AltFrame frame;
-    if (!mavlink_coordinate_frame_to_location_alt_frame((MAV_FRAME)packet.frame, frame)) {
-        return MAV_RESULT_DENIED; // failed as the location is not valid
-    }
-    request_location.set_alt_cm((int32_t)(packet.z * 100.0f), frame);
 
     if (!rover.control_mode->in_guided_mode()) {
         if (!rover.set_mode(Mode::Number::GUIDED, ModeReason::GCS_COMMAND)) {
@@ -731,7 +761,7 @@ MAV_RESULT GCS_MAVLINK_Rover::handle_command_int_do_reposition(const mavlink_com
     }
 
     // set the destination
-    if (!rover.mode_guided.set_desired_location(request_location)) {
+    if (!rover.mode_guided.set_desired_location(requested_location)) {
         return MAV_RESULT_FAILED;
     }
 
@@ -1069,7 +1099,7 @@ uint8_t GCS_MAVLINK_Rover::high_latency_tgt_heading() const
         // need to convert -180->180 to 0->360/2
         return wrap_360(control_mode->wp_bearing()) / 2;
     }
-    return 0;      
+    return 0;
 }
     
 uint16_t GCS_MAVLINK_Rover::high_latency_tgt_dist() const
@@ -1079,7 +1109,7 @@ uint16_t GCS_MAVLINK_Rover::high_latency_tgt_dist() const
         // return units are dm
         return MIN((control_mode->get_distance_to_destination()) / 10, UINT16_MAX);
     }
-    return 0;  
+    return 0;
 }
 
 uint8_t GCS_MAVLINK_Rover::high_latency_tgt_airspeed() const
@@ -1098,7 +1128,7 @@ uint8_t GCS_MAVLINK_Rover::high_latency_wind_speed() const
         // return units are m/s*5
         return MIN(rover.g2.windvane.get_true_wind_speed() * 5, UINT8_MAX);
     }
-    return 0; 
+    return 0;
 }
 
 uint8_t GCS_MAVLINK_Rover::high_latency_wind_direction() const
@@ -1107,6 +1137,6 @@ uint8_t GCS_MAVLINK_Rover::high_latency_wind_direction() const
         // return units are deg/2
         return wrap_360(degrees(rover.g2.windvane.get_true_wind_direction_rad())) / 2;
     }
-    return 0; 
+    return 0;
 }
 #endif // HAL_HIGH_LATENCY2_ENABLED

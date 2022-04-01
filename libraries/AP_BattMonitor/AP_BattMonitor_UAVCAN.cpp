@@ -21,6 +21,20 @@
 
 extern const AP_HAL::HAL& hal;
 
+const AP_Param::GroupInfo AP_BattMonitor_UAVCAN::var_info[] = {
+
+    // @Param: CURR_MULT
+    // @DisplayName: Scales reported power monitor current
+    // @Description: Multiplier applied to all current related reports to allow for adjustment if no UAVCAN param access or current splitting applications
+    // @Range: .1 10
+    // @User: Advanced
+    AP_GROUPINFO("CURR_MULT", 30, AP_BattMonitor_UAVCAN, _curr_mult, 1.0),
+
+    // Param indexes must be between 30 and 39 to avoid conflict with other battery monitor param tables loaded by pointer
+
+    AP_GROUPEND
+};
+
 UC_REGISTRY_BINDER(BattInfoCb, uavcan::equipment::power::BatteryInfo);
 UC_REGISTRY_BINDER(BattInfoAuxCb, ardupilot::equipment::power::BatteryInfoAux);
 UC_REGISTRY_BINDER(MpptStreamCb, mppt::Stream);
@@ -30,6 +44,9 @@ AP_BattMonitor_UAVCAN::AP_BattMonitor_UAVCAN(AP_BattMonitor &mon, AP_BattMonitor
     AP_BattMonitor_Backend(mon, mon_state, params),
     _type(type)
 {
+    AP_Param::setup_object_defaults(this,var_info);
+    _state.var_info = var_info;
+
     // starts with not healthy
     _state.healthy = false;
 }
@@ -125,26 +142,22 @@ void AP_BattMonitor_UAVCAN::update_interim_state(const float voltage, const floa
     WITH_SEMAPHORE(_sem_battmon);
 
     _interim_state.voltage = voltage;
-    _interim_state.current_amps = current;
+    _interim_state.current_amps = _curr_mult * current;
     _soc = soc;
 
     if (!isnanf(temperature_K) && temperature_K > 0) {
         // Temperature reported from battery in kelvin and stored internally in Celsius.
-        _interim_state.temperature = temperature_K - C_TO_KELVIN;
+        _interim_state.temperature = KELVIN_TO_C(temperature_K);
         _interim_state.temperature_time = AP_HAL::millis();
     }
 
     const uint32_t tnow = AP_HAL::micros();
 
     if (!_has_battery_info_aux || _mppt.is_detected) {
-        uint32_t dt = tnow - _interim_state.last_time_micros;
+        const uint32_t dt_us = tnow - _interim_state.last_time_micros;
 
         // update total current drawn since startup
-        if (_interim_state.last_time_micros != 0 && dt < 2000000) {
-            float mah = calculate_mah(_interim_state.current_amps, dt);
-            _interim_state.consumed_mah += mah;
-            _interim_state.consumed_wh  += 0.001f * mah * _interim_state.voltage;
-        }
+        update_consumed(_interim_state, dt_us);
     }
 
     // record time
@@ -185,7 +198,7 @@ void AP_BattMonitor_UAVCAN::handle_mppt_stream(const MpptStreamCb &cb)
     const uint8_t soc = 127;
 
     // convert C to Kelvin
-    const float temperature_K = isnanf(cb.msg->temperature) ? 0 : cb.msg->temperature + C_TO_KELVIN;
+    const float temperature_K = isnanf(cb.msg->temperature) ? 0 : C_TO_KELVIN(cb.msg->temperature);
 
     update_interim_state(voltage, current, temperature_K, soc); 
 

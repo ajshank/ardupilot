@@ -3,7 +3,6 @@
 #include "AP_Logger_Backend.h"
 
 #include "AP_Logger_File.h"
-#include "AP_Logger_SITL.h"
 #include "AP_Logger_DataFlash.h"
 #include "AP_Logger_MAVLink.h"
 
@@ -28,7 +27,7 @@ extern const AP_HAL::HAL& hal;
 #endif
 
 #ifndef HAL_LOGGING_STACK_SIZE
-#define HAL_LOGGING_STACK_SIZE 1324
+#define HAL_LOGGING_STACK_SIZE 1580
 #endif
 
 #ifndef HAL_LOGGING_MAV_BUFSIZE
@@ -45,7 +44,9 @@ extern const AP_HAL::HAL& hal;
 #endif
 
 #ifndef HAL_LOGGING_BACKENDS_DEFAULT
-# if HAL_LOGGING_DATAFLASH_ENABLED
+# if HAL_LOGGING_FILESYSTEM_ENABLED && (CONFIG_HAL_BOARD == HAL_BOARD_SITL)
+#  define HAL_LOGGING_BACKENDS_DEFAULT Backend_Type::FILESYSTEM
+# elif HAL_LOGGING_DATAFLASH_ENABLED
 #  define HAL_LOGGING_BACKENDS_DEFAULT Backend_Type::BLOCK
 # elif HAL_LOGGING_FILESYSTEM_ENABLED
 #  define HAL_LOGGING_BACKENDS_DEFAULT Backend_Type::FILESYSTEM
@@ -117,7 +118,7 @@ const AP_Param::GroupInfo AP_Logger::var_info[] = {
 
     // @Param: _FILE_RATEMAX
     // @DisplayName: Maximum logging rate for file backend
-    // @Description: This sets the maximum rate that streaming log messages will be logged to the file backend. A value of zero means
+    // @Description: This sets the maximum rate that streaming log messages will be logged to the file backend. A value of zero means that rate limiting is disabled.
     // @Units: Hz
     // @Range: 0 1000
     // @User: Standard
@@ -126,7 +127,7 @@ const AP_Param::GroupInfo AP_Logger::var_info[] = {
 #if HAL_LOGGING_MAVLINK_ENABLED
     // @Param: _MAV_RATEMAX
     // @DisplayName: Maximum logging rate for mavlink backend
-    // @Description: This sets the maximum rate that streaming log messages will be logged to the mavlink backend. A value of zero means
+    // @Description: This sets the maximum rate that streaming log messages will be logged to the mavlink backend. A value of zero means that rate limiting is disabled.
     // @Units: Hz
     // @Range: 0 1000
     // @User: Standard
@@ -136,7 +137,7 @@ const AP_Param::GroupInfo AP_Logger::var_info[] = {
 #if HAL_LOGGING_BLOCK_ENABLED
     // @Param: _BLK_RATEMAX
     // @DisplayName: Maximum logging rate for block backend
-    // @Description: This sets the maximum rate that streaming log messages will be logged to the mavlink backend. A value of zero means
+    // @Description: This sets the maximum rate that streaming log messages will be logged to the mavlink backend. A value of zero means that rate limiting is disabled.
     // @Units: Hz
     // @Range: 0 1000
     // @User: Standard
@@ -186,9 +187,6 @@ void AP_Logger::Init(const struct LogStructure *structures, uint8_t num_types)
 #endif
 #if HAL_LOGGING_DATAFLASH_ENABLED
         { Backend_Type::BLOCK, AP_Logger_DataFlash::probe },
-#endif
-#if HAL_LOGGING_SITL_ENABLED
-        { Backend_Type::BLOCK, AP_Logger_SITL::probe },
 #endif
 #if HAL_LOGGING_MAVLINK_ENABLED
         { Backend_Type::MAVLINK, AP_Logger_MAVLink::probe },
@@ -252,7 +250,7 @@ const char* AP_Logger::unit_name(const uint8_t unit_id)
             return _units[i].unit;
         }
     }
-    return NULL;
+    return nullptr;
 }
 
 /// return a multiplier value given its ID
@@ -650,11 +648,16 @@ void AP_Logger::set_vehicle_armed(const bool armed_state)
     }
     _armed = armed_state;
 
-    if (!_armed) {
+    if (_armed) {
+         // went from disarmed to armed
+#if HAL_LOGGER_FILE_CONTENTS_ENABLED
+        // get a set of @SYS files logged:
+        file_content_prepare_for_arming = true;
+#endif
+    } else {
         // went from armed to disarmed
         FOR_EACH_BACKEND(vehicle_was_disarmed());
     }
-
 }
 
 #if APM_BUILD_TYPE(APM_BUILD_Replay)
@@ -1293,7 +1296,7 @@ int16_t AP_Logger::Write_calc_msg_len(const char *fmt) const
 void AP_Logger::io_thread(void)
 {
     uint32_t last_run_us = AP_HAL::micros();
-    uint8_t counter = 0;
+    uint32_t last_stack_us = last_run_us;
 
     while (true) {
         uint32_t now = AP_HAL::micros();
@@ -1308,7 +1311,8 @@ void AP_Logger::io_thread(void)
 
         FOR_EACH_BACKEND(io_timer());
 
-        if (++counter % 4 == 0) {
+        if (now - last_stack_us > 100000U) {
+            last_stack_us = now;
             hal.util->log_stack_info();
         }
 #if HAL_LOGGER_FILE_CONTENTS_ENABLED
@@ -1396,10 +1400,86 @@ bool AP_Logger::log_while_disarmed(void) const
 }
 
 #if HAL_LOGGER_FILE_CONTENTS_ENABLED
+void AP_Logger::prepare_at_arming_sys_file_logging()
+{
+    // free existing content:
+    at_arm_file_content.reset();
+
+    /*
+      log files useful for diagnostics on arming. We log on arming as
+      with LOG_DISARMED we don't want to log the statistics at boot or
+      we wouldn't get a realistic idea of key system values
+      Note that some of these files may not exist, in that case they
+      are ignored
+     */
+    static const char *log_content_filenames[] = {
+        "@SYS/uarts.txt",
+        "@SYS/dma.txt",
+        "@SYS/memory.txt",
+        "@SYS/threads.txt",
+        "@SYS/timers.txt",
+        "@ROMFS/hwdef.dat",
+        "@SYS/storage.bin",
+        "@SYS/crash_dump.bin",
+    };
+    for (const auto *name : log_content_filenames) {
+        log_file_content(at_arm_file_content, name);
+    }
+}
+
+void AP_Logger::FileContent::reset()
+{
+    WITH_SEMAPHORE(sem);
+    file_list *next = nullptr;
+    for (auto *c = head; c != nullptr; c = next) {
+        next = c->next;
+        delete [] c->filename;
+        delete c;
+    }
+    head = nullptr;
+    tail = nullptr;
+    if (fd != -1) {
+        AP::FS().close(fd);
+        fd = -1;
+    }
+    counter = 0;
+    fast = false;
+    offset = 0;
+}
+
+// removes victim from FileContent ***and delete()s it***
+void AP_Logger::FileContent::remove_and_free(file_list *victim)
+{
+    WITH_SEMAPHORE(sem);
+
+    file_list *prev = nullptr;
+    for (auto *c = head; c != nullptr; prev = c, c = c->next) {
+        if (c != victim) {
+            continue;
+        }
+
+        // found the item to remove; remove it and return
+        if (prev == nullptr) {
+            head = victim->next;
+        } else {
+            prev->next = victim->next;
+        }
+        delete [] victim->filename;
+        delete victim;
+        return;
+    }
+}
+
+
 /*
   log the content of a file in FILE log messages
  */
 void AP_Logger::log_file_content(const char *filename)
+{
+    log_file_content(normal_file_content, filename);
+}
+
+void AP_Logger::log_file_content(FileContent &file_content, const char *filename)
 {
     WITH_SEMAPHORE(file_content.sem);
     auto *file = new file_list;
@@ -1410,6 +1490,7 @@ void AP_Logger::log_file_content(const char *filename)
     const size_t len = strlen(filename)+1;
     char * tmp_filename = new char[len];
     if (tmp_filename == nullptr) {
+        delete file;
         return;
     }
     strncpy(tmp_filename, filename, len);
@@ -1435,6 +1516,17 @@ void AP_Logger::log_file_content(const char *filename)
  */
 void AP_Logger::file_content_update(void)
 {
+    if (file_content_prepare_for_arming) {
+        file_content_prepare_for_arming = false;
+        prepare_at_arming_sys_file_logging();
+    }
+
+    file_content_update(at_arm_file_content);
+    file_content_update(normal_file_content);
+}
+
+void AP_Logger::file_content_update(FileContent &file_content)
+{
     auto *file = file_content.head;
     if (file == nullptr) {
         return;
@@ -1452,25 +1544,12 @@ void AP_Logger::file_content_update(void)
         return;
     }
 
-    // remove a file structure from the linked list
-    auto remove_from_list = [this,file]()
-    { 
-        WITH_SEMAPHORE(file_content.sem);
-        file_content.head = file->next;
-        if (file_content.tail == file) {
-            file_content.tail = file_content.head;
-        }
-        delete [] file->filename;
-        delete file;
-        file_content.fd = -1;
-    };
-
     if (file_content.fd == -1) {
         // open a new file
         file_content.fd  = AP::FS().open(file->filename, O_RDONLY);
         file_content.fast = strncmp(file->filename, "@SYS/crash_dump", 15) == 0;
         if (file_content.fd == -1) {
-            remove_from_list();
+            file_content.remove_and_free(file);
             return;
         }
         file_content.offset = 0;
@@ -1486,7 +1565,7 @@ void AP_Logger::file_content_update(void)
     const auto length = AP::FS().read(file_content.fd, pkt.data, sizeof(pkt.data));
     if (length <= 0) {
         AP::FS().close(file_content.fd);
-        remove_from_list();
+        file_content.remove_and_free(file);
         return;
     }
     pkt.offset = file_content.offset;

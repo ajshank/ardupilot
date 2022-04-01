@@ -155,6 +155,11 @@ def options(opt):
         default=False,
         help='enable OS level asserts.')
 
+    g.add_option('--save-temps',
+        action='store_true',
+        default=False,
+        help='save compiler temporary files.')
+    
     g.add_option('--enable-malloc-guard',
         action='store_true',
         default=False,
@@ -387,6 +392,7 @@ def configure(cfg):
     cfg.env.BOOTLOADER = cfg.options.bootloader
     cfg.env.ENABLE_MALLOC_GUARD = cfg.options.enable_malloc_guard
     cfg.env.ENABLE_STATS = cfg.options.enable_stats
+    cfg.env.SAVE_TEMPS = cfg.options.save_temps
 
     cfg.env.HWDEF_EXTRA = cfg.options.extra_hwdef
     if cfg.env.HWDEF_EXTRA:
@@ -502,7 +508,7 @@ def configure(cfg):
     # Always use system extensions
     cfg.define('_GNU_SOURCE', 1)
 
-    cfg.write_config_header(os.path.join(cfg.variant, 'ap_config.h'))
+    cfg.write_config_header(os.path.join(cfg.variant, 'ap_config.h'), guard='_AP_CONFIG_H_')
 
     # add in generated flags
     cfg.env.CXXFLAGS += ['-include', 'ap_config.h']
@@ -606,7 +612,7 @@ def _build_dynamic_sources(bld):
     if not bld.env.BOOTLOADER:
         bld(
             features='mavgen',
-            source='modules/mavlink/message_definitions/v1.0/ardupilotmega.xml',
+            source='modules/mavlink/message_definitions/v1.0/all.xml',
             output_dir='libraries/GCS_MAVLink/include/mavlink/v2.0/',
             name='mavlink',
             # this below is not ideal, mavgen tool should set this, but that's not

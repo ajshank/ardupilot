@@ -182,9 +182,6 @@ void Blimp::ten_hz_logging_loop()
     if (should_log(MASK_LOG_ATTITUDE_MED) || should_log(MASK_LOG_ATTITUDE_FAST)) {
         Log_Write_EKF_POS();
     }
-    if (should_log(MASK_LOG_MOTBATT)) {
-        Log_Write_MotBatt();
-    }
     if (should_log(MASK_LOG_RCIN)) {
         logger.Write_RCIN();
         if (rssi.enabled()) {
@@ -260,10 +257,9 @@ void Blimp::update_altitude()
     read_barometer();
 
     if (should_log(MASK_LOG_CTUN)) {
+        AP::ins().write_notch_log_messages();
 #if HAL_GYROFFT_ENABLED
         gyro_fft.write_log_messages();
-#else
-        write_notch_log_messages();
 #endif
     }
 }

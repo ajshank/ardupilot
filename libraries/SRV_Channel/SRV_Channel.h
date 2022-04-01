@@ -176,12 +176,14 @@ public:
         k_trim                  = 135,  // always outputs SERVOn_TRIM
         k_max                   = 136,  // always outputs SERVOn_MAX
         k_mast_rotation         = 137,
+        k_alarm                 = 138,
+        k_alarm_inverted        = 139,
         k_nr_aux_servo_functions         ///< This must be the last enum value (only add new values _before_ this one)
     } Aux_servo_function_t;
 
     // check if a function is valid for indexing into functions
     static bool valid_function(Aux_servo_function_t fn) {
-        return fn >= 0 && fn < k_nr_aux_servo_functions;
+        return fn > k_none && fn < k_nr_aux_servo_functions;
     }
     bool valid_function(void) const {
         return valid_function(function);
@@ -367,6 +369,9 @@ public:
     // get scaled output for the given function type.
     static float get_output_scaled(SRV_Channel::Aux_servo_function_t function);
 
+    // get slew limited scaled output for the given function type
+    static float get_slew_limited_output_scaled(SRV_Channel::Aux_servo_function_t function);
+
     // get pwm output for the first channel of the given function type.
     static bool get_output_pwm(SRV_Channel::Aux_servo_function_t function, uint16_t &value);
 
@@ -381,7 +386,7 @@ public:
     static uint16_t get_output_channel_mask(SRV_Channel::Aux_servo_function_t function);
     
     // limit slew rate to given limit in percent per second
-    static void limit_slew_rate(SRV_Channel::Aux_servo_function_t function, float slew_rate, float dt);
+    static void set_slew_rate(SRV_Channel::Aux_servo_function_t function, float slew_rate, uint16_t range, float dt);
 
     // call output_ch() on all channels
     static void output_ch_all(void);
@@ -547,6 +552,16 @@ public:
     // return true if a channel is set to type GPIO
     static bool is_GPIO(uint8_t channel);
 
+    // return true if a channel is set to type alarm
+    static bool is_alarm(uint8_t channel) {
+        return channel_function(channel) == SRV_Channel::k_alarm;
+    }
+
+    // return true if a channel is set to type alarm inverted
+    static bool is_alarm_inverted(uint8_t channel) {
+        return channel_function(channel) == SRV_Channel::k_alarm_inverted;
+    }
+
 private:
 
     static bool disabled_passthrough;
@@ -619,6 +634,16 @@ private:
     }
 
     static bool emergency_stop;
+
+    // linked list for slew rate handling
+    struct slew_list {
+        slew_list(SRV_Channel::Aux_servo_function_t _func) : func(_func) {};
+        const SRV_Channel::Aux_servo_function_t func;
+        float last_scaled_output;
+        float max_change;
+        slew_list * next;
+    };
+    static slew_list *_slew;
 
     // semaphore for multi-thread use of override_counter array
     HAL_Semaphore override_counter_sem;

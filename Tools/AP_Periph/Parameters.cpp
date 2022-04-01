@@ -1,3 +1,5 @@
+
+#include <AP_HAL/AP_HAL_Boards.h>
 #include "AP_Periph.h"
 
 extern const AP_HAL::HAL &hal;
@@ -10,8 +12,8 @@ extern const AP_HAL::HAL &hal;
 #define HAL_PERIPH_RANGEFINDER_BAUDRATE_DEFAULT 115200
 #endif
 
-#ifndef HAL_PERIPH_RANGEFINDER_PORT_DEFAULT
-#define HAL_PERIPH_RANGEFINDER_PORT_DEFAULT 3
+#ifndef AP_PERIPH_RANGEFINDER_PORT_DEFAULT
+#define AP_PERIPH_RANGEFINDER_PORT_DEFAULT 3
 #endif
 
 #ifndef HAL_PERIPH_GPS_PORT_DEFAULT
@@ -31,6 +33,10 @@ extern const AP_HAL::HAL &hal;
 
 #ifndef AP_PERIPH_ESC_TELEM_PORT_DEFAULT
 #define AP_PERIPH_ESC_TELEM_PORT_DEFAULT -1
+#endif
+
+#ifndef AP_PERIPH_BARO_ENABLE_DEFAULT
+#define AP_PERIPH_BARO_ENABLE_DEFAULT 1
 #endif
 
 #ifndef HAL_DEFAULT_MAV_SYSTEM_ID
@@ -118,6 +124,34 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
     GARRAY(can_protocol,    2, "CAN3_PROTOCOL", AP_CANManager::Driver_Type_UAVCAN),
 #endif
 
+#if HAL_CANFD_SUPPORTED
+    // @Param: CAN_FDMODE
+    // @DisplayName: Enable CANFD mode
+    // @Description: Enabling this option sets the CAN bus to be in CANFD mode with BRS.
+    // @Values: 0:Disabled,1:Enabled
+    // @User: Advanced
+    // @RebootRequired: True
+    GSCALAR(can_fdmode,     "CAN_FDMODE", 0),
+
+    // @Param: CAN_FDBAUDRATE
+    // @DisplayName: Set up bitrate for data section on CAN1
+    // @Description: This sets the bitrate for the data section of CAN1.
+    // @Values: 1:1M, 2:2M, 4:4M, 5:5M, 8:8M
+    // @User: Advanced
+    // @RebootRequired: True
+    GARRAY(can_fdbaudrate,    0, "CAN_FDBAUDRATE", HAL_CANFD_SUPPORTED),
+
+#if HAL_NUM_CAN_IFACES >= 2
+    // @Param: CAN2_FDBAUDRATE
+    // @DisplayName: Set up bitrate for data section on CAN2
+    // @Description: This sets the bitrate for the data section of CAN2.
+    // @Values: 1:1M, 2:2M, 4:4M, 5:5M, 8:8M
+    // @User: Advanced
+    // @RebootRequired: True
+    GARRAY(can_fdbaudrate,    1, "CAN2_FDBAUDRATE", HAL_CANFD_SUPPORTED),
+#endif
+#endif
+
 #if !defined(HAL_NO_FLASH_SUPPORT) && !defined(HAL_NO_ROMFS_SUPPORT)
     // @Param: FLASH_BOOTLOADER
     // @DisplayName: Trigger bootloader update
@@ -130,9 +164,10 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
     // @Param: DEBUG
     // @DisplayName: Debug
     // @Description: Debug
-    // @Values: 0:Disabled, 1:Show free stack space
+    // @Bitmask: 0:Disabled, 1:Show free stack space, 2:Auto Reboot after 15sec
     // @User: Advanced
     GSCALAR(debug, "DEBUG", 0),
+
 
     // @Param: BRD_SERIAL_NUM
     // @DisplayName: Serial number of device
@@ -167,7 +202,7 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
     // @RebootRequired: True
     GSCALAR(gps_port, "GPS_PORT", HAL_PERIPH_GPS_PORT_DEFAULT),
 
-#if HAL_NUM_CAN_IFACES >= 2
+#if GPS_MOVING_BASELINE
     // @Param: MB_CAN_PORT
     // @DisplayName: Moving Baseline CAN Port option
     // @Description: Autoselect dedicated CAN port on which moving baseline data will be transmitted.
@@ -201,7 +236,7 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
     // @Description: Barometer Enable
     // @Values: 0:Disabled, 1:Enabled
     // @User: Standard
-    GSCALAR(baro_enable, "BARO_ENABLE", 1),
+    GSCALAR(baro_enable, "BARO_ENABLE", AP_PERIPH_BARO_ENABLE_DEFAULT),
 #endif
 
 #ifdef AP_PERIPH_HAVE_LED_WITHOUT_NOTIFY
@@ -239,7 +274,7 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
     // @Increment: 1
     // @User: Advanced
     // @RebootRequired: True
-    GSCALAR(rangefinder_port, "RNGFND_PORT", HAL_PERIPH_RANGEFINDER_PORT_DEFAULT),
+    GSCALAR(rangefinder_port, "RNGFND_PORT", AP_PERIPH_RANGEFINDER_PORT_DEFAULT),
 
     // Rangefinder driver
     // @Group: RNGFND
@@ -367,6 +402,7 @@ const AP_Param::Info AP_Periph_FW::var_info[] = {
     // @Path: ../libraries/AP_Scripting/AP_Scripting.cpp
     GOBJECT(scripting, "SCR_", AP_Scripting),
 #endif
+
     AP_VAREND
 };
 

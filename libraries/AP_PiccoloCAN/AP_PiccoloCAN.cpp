@@ -323,7 +323,7 @@ void AP_PiccoloCAN::update()
 
     AP_Logger *logger = AP_Logger::get_singleton();
 
-    // Push received telemtry data into the logging system
+    // Push received telemetry data into the logging system
     if (logger && logger->logging_enabled()) {
 
         WITH_SEMAPHORE(_telem_sem);
@@ -337,7 +337,7 @@ void AP_PiccoloCAN::update()
                     timestamp,
                     ii,
                     (float) servo.statusA.position,         // Servo position (represented in microsecond units)
-                    (float) servo.statusB.current / 100.0f, // Servo force (actually servo current, 0.01A per bit)
+                    (float) servo.statusB.current * 0.01f, // Servo force (actually servo current, 0.01A per bit)
                     (float) servo.statusB.speed,            // Servo speed (degrees per second)
                     (uint8_t) abs(servo.statusB.dutyCycle)  // Servo duty cycle (absolute value as it can be +/- 100%)
                 );
@@ -749,7 +749,7 @@ bool AP_PiccoloCAN::is_servo_channel_active(uint8_t chan)
     SRV_Channel::Aux_servo_function_t function = SRV_Channels::channel_function(chan);
 
     // Ignore if the servo channel does not have a function assigned
-    if (function == SRV_Channel::k_none) {
+    if (function <= SRV_Channel::k_none) {
         return false;
     }
 

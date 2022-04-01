@@ -60,6 +60,9 @@ public:
     bool get_system_id_unformatted(uint8_t buf[], uint8_t &len) override;
 
     bool toneAlarm_init(uint8_t types) override;
+#if HAL_USE_PWM == TRUE
+    bool toneAlarm_init(const PWMConfig& pwm_cfg, PWMDriver* pwm_drv, pwmchannel_t chan, bool active_high);
+#endif
     void toneAlarm_set_buzzer_tone(float frequency, float volume, uint32_t duration_ms) override;
     static uint8_t _toneAlarm_types;
 
@@ -87,9 +90,13 @@ public:
     // save/load key persistent parameters in bootloader sector
     bool load_persistent_params(ExpandingString &str) const override;
 #endif
+#if HAL_UART_STATS_ENABLED
     // request information on uart I/O
     virtual void uart_info(ExpandingString &str) override;
-
+#endif
+#if HAL_USE_PWM == TRUE
+    void timer_info(ExpandingString &str) override;
+#endif
     // returns random values
     bool get_random_vals(uint8_t* data, size_t size) override;
 
@@ -100,7 +107,7 @@ public:
     void set_soft_armed(const bool b) override;
 
 private:
-#ifdef HAL_PWM_ALARM
+#if HAL_USE_PWM == TRUE
     struct ToneAlarmPwmGroup {
         pwmchannel_t chan;
         PWMConfig pwm_cfg;

@@ -80,11 +80,12 @@ void Plane::init_ardupilot()
     log_init();
 #endif
 
-    // initialise airspeed sensor
-    airspeed.init();
-
     AP::compass().set_log_bit(MASK_LOG_COMPASS);
     AP::compass().init();
+
+#if AP_AIRSPEED_ENABLED
+    airspeed.set_log_bit(MASK_LOG_IMU);
+#endif
 
     // GPS Initialization
     gps.set_log_gps_bit(MASK_LOG_GPS);
@@ -136,7 +137,7 @@ void Plane::init_ardupilot()
     reset_control_switch();
 
     // initialise sensor
-#if OPTFLOW == ENABLED
+#if AP_OPTICALFLOW_ENABLED
     if (optflow.enabled()) {
         optflow.init(-1);
     }
@@ -407,14 +408,6 @@ void Plane::startup_INS_ground(void)
     //-----------------------------
     barometer.set_log_baro_bit(MASK_LOG_IMU);
     barometer.calibrate();
-
-    if (airspeed.enabled()) {
-        // initialize airspeed sensor
-        // --------------------------
-        airspeed.calibrate(true);
-    } else {
-        gcs().send_text(MAV_SEVERITY_WARNING,"No airspeed sensor present");
-    }
 }
 
 // sets notify object flight mode information
@@ -481,7 +474,7 @@ void Plane::update_dynamic_notch()
             float rpm;
             if (rpm_sensor.get_rpm(0, rpm)) {
                 // set the harmonic notch filter frequency from the main rotor rpm
-                ins.update_harmonic_notch_freq_hz(MAX(ref_freq, rpm * ref / 60.0f));
+                ins.update_harmonic_notch_freq_hz(MAX(ref_freq, rpm * ref * (1/60.0)));
             } else {
                 ins.update_harmonic_notch_freq_hz(ref_freq);
             }

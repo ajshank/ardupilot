@@ -27,12 +27,12 @@
 #define AP_BATT_MONITOR_CELLS_MAX           12
 #endif
 
-#ifndef HAL_BATTMON_SMBUS_ENABLE
-#define HAL_BATTMON_SMBUS_ENABLE 1
+#ifndef AP_BATTMON_SMBUS_ENABLE
+#define AP_BATTMON_SMBUS_ENABLE 1
 #endif
 
-#ifndef HAL_BATTMON_FUEL_ENABLE
-#define HAL_BATTMON_FUEL_ENABLE 1
+#ifndef AP_BATTMON_FUEL_ENABLE
+#define AP_BATTMON_FUEL_ENABLE 1
 #endif
 
 // declare backend class
@@ -161,6 +161,10 @@ public:
     /// voltage - returns battery voltage in volts
     float voltage(uint8_t instance) const;
     float voltage() const { return voltage(AP_BATT_PRIMARY_INSTANCE); }
+
+    // voltage for a GCS, may be resistance compensated
+    float gcs_voltage(uint8_t instance) const;
+    float gcs_voltage(void) const { return gcs_voltage(AP_BATT_PRIMARY_INSTANCE); }
 
     /// get voltage with sag removed (based on battery current draw and resistance)
     /// this will always be greater than or equal to the raw voltage

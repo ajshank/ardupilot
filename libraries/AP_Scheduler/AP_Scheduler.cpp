@@ -27,6 +27,7 @@
 #include <AP_InertialSensor/AP_InertialSensor.h>
 #include <AP_InternalError/AP_InternalError.h>
 #include <AP_Common/ExpandingString.h>
+#include <AP_HAL/SIMState.h>
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
 #include <SITL/SITL.h>
@@ -400,6 +401,10 @@ void AP_Scheduler::loop()
     perf_info.check_loop_time(sample_time_us - _loop_timer_start_us);
         
     _loop_timer_start_us = sample_time_us;
+
+#if AP_SIM_ENABLED && CONFIG_HAL_BOARD != HAL_BOARD_SITL
+    hal.simstate->update();
+#endif
 }
 
 void AP_Scheduler::update_logging()
@@ -448,7 +453,7 @@ void AP_Scheduler::Log_Write_Performance()
 void AP_Scheduler::task_info(ExpandingString &str)
 {
     // a header to allow for machine parsers to determine format
-    str.printf("TasksV1\n");
+    str.printf("TasksV2\n");
 
     // dynamically enable statistics collection
     if (!(_options & uint8_t(Options::RECORD_TASK_INFO))) {
@@ -522,16 +527,16 @@ void AP_Scheduler::task_info(ExpandingString &str)
         float pct = 0.0f;
         if (ti != nullptr && ti->tick_count > 0) {
             pct = ti->elapsed_time_us * 100.0f / total_time;
-            avg = MIN(uint16_t(ti->elapsed_time_us / ti->tick_count), 999);
+            avg = MIN(uint16_t(ti->elapsed_time_us / ti->tick_count), 9999);
         }
 
 #if HAL_MINIMIZE_FEATURES
-        const char* fmt = "%-16.16s MIN=%3u MAX=%3u AVG=%3u OVR=%3u SLP=%3u, TOT=%4.1f%%\n";
+        const char* fmt = "%-16.16s MIN=%4u MAX=%4u AVG=%4u OVR=%3u SLP=%3u, TOT=%4.1f%%\n";
 #else
-        const char* fmt = "%-32.32s MIN=%3u MAX=%3u AVG=%3u OVR=%3u SLP=%3u, TOT=%4.1f%%\n";
+        const char* fmt = "%-32.32s MIN=%4u MAX=%4u AVG=%4u OVR=%3u SLP=%3u, TOT=%4.1f%%\n";
 #endif
         str.printf(fmt, task_name,
-                   unsigned(MIN(ti->min_time_us, 999)), unsigned(MIN(ti->max_time_us, 999)), unsigned(avg),
+                   unsigned(MIN(ti->min_time_us, 9999)), unsigned(MIN(ti->max_time_us, 9999)), unsigned(avg),
                    unsigned(MIN(ti->overrun_count, 999)), unsigned(MIN(ti->slip_count, 999)), pct);
     }
 }

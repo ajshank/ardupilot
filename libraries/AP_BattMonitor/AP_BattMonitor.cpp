@@ -47,6 +47,8 @@ const AP_Param::GroupInfo AP_BattMonitor::var_info[] = {
     // @Path: AP_BattMonitor_SMBus.cpp
     // @Group: _
     // @Path: AP_BattMonitor_Sum.cpp
+    // @Group: _
+    // @Path: AP_BattMonitor_UAVCAN.cpp
     AP_SUBGROUPVARPTR(drivers[0], "_", 41, AP_BattMonitor, backend_var_info[0]),
 
 #if AP_BATT_MONITOR_MAX_INSTANCES > 1
@@ -60,6 +62,8 @@ const AP_Param::GroupInfo AP_BattMonitor::var_info[] = {
     // @Path: AP_BattMonitor_SMBus.cpp
     // @Group: 2_
     // @Path: AP_BattMonitor_Sum.cpp
+    // @Group: 2_
+    // @Path: AP_BattMonitor_UAVCAN.cpp
     AP_SUBGROUPVARPTR(drivers[1], "2_", 42, AP_BattMonitor, backend_var_info[1]),
 #endif
 
@@ -74,6 +78,8 @@ const AP_Param::GroupInfo AP_BattMonitor::var_info[] = {
     // @Path: AP_BattMonitor_SMBus.cpp
     // @Group: 3_
     // @Path: AP_BattMonitor_Sum.cpp
+    // @Group: 3_
+    // @Path: AP_BattMonitor_UAVCAN.cpp
     AP_SUBGROUPVARPTR(drivers[2], "3_", 43, AP_BattMonitor, backend_var_info[2]),
 #endif
 
@@ -88,6 +94,8 @@ const AP_Param::GroupInfo AP_BattMonitor::var_info[] = {
     // @Path: AP_BattMonitor_SMBus.cpp
     // @Group: 4_
     // @Path: AP_BattMonitor_Sum.cpp
+    // @Group: 4_
+    // @Path: AP_BattMonitor_UAVCAN.cpp
     AP_SUBGROUPVARPTR(drivers[3], "4_", 44, AP_BattMonitor, backend_var_info[3]),
 #endif
 
@@ -102,6 +110,8 @@ const AP_Param::GroupInfo AP_BattMonitor::var_info[] = {
     // @Path: AP_BattMonitor_SMBus.cpp
     // @Group: 5_
     // @Path: AP_BattMonitor_Sum.cpp
+    // @Group: 5_
+    // @Path: AP_BattMonitor_UAVCAN.cpp
     AP_SUBGROUPVARPTR(drivers[4], "5_", 45, AP_BattMonitor, backend_var_info[4]),
 #endif
 
@@ -116,6 +126,8 @@ const AP_Param::GroupInfo AP_BattMonitor::var_info[] = {
     // @Path: AP_BattMonitor_SMBus.cpp
     // @Group: 6_
     // @Path: AP_BattMonitor_Sum.cpp
+    // @Group: 6_
+    // @Path: AP_BattMonitor_UAVCAN.cpp
     AP_SUBGROUPVARPTR(drivers[5], "6_", 46, AP_BattMonitor, backend_var_info[5]),
 #endif
 
@@ -130,6 +142,8 @@ const AP_Param::GroupInfo AP_BattMonitor::var_info[] = {
     // @Path: AP_BattMonitor_SMBus.cpp
     // @Group: 7_
     // @Path: AP_BattMonitor_Sum.cpp
+    // @Group: 7_
+    // @Path: AP_BattMonitor_UAVCAN.cpp
     AP_SUBGROUPVARPTR(drivers[6], "7_", 47, AP_BattMonitor, backend_var_info[6]),
 #endif
 
@@ -144,6 +158,8 @@ const AP_Param::GroupInfo AP_BattMonitor::var_info[] = {
     // @Path: AP_BattMonitor_SMBus.cpp
     // @Group: 8_
     // @Path: AP_BattMonitor_Sum.cpp
+    // @Group: 8_
+    // @Path: AP_BattMonitor_UAVCAN.cpp
     AP_SUBGROUPVARPTR(drivers[7], "8_", 48, AP_BattMonitor, backend_var_info[7]),
 #endif
 
@@ -158,6 +174,8 @@ const AP_Param::GroupInfo AP_BattMonitor::var_info[] = {
     // @Path: AP_BattMonitor_SMBus.cpp
     // @Group: 9_
     // @Path: AP_BattMonitor_Sum.cpp
+    // @Group: 9_
+    // @Path: AP_BattMonitor_UAVCAN.cpp
     AP_SUBGROUPVARPTR(drivers[8], "9_", 49, AP_BattMonitor, backend_var_info[8]),
 #endif
 
@@ -208,7 +226,7 @@ AP_BattMonitor::init()
             case Type::ANALOG_VOLTAGE_AND_CURRENT:
                 drivers[instance] = new AP_BattMonitor_Analog(*this, state[instance], _params[instance]);
                 break;
-#if HAL_BATTMON_SMBUS_ENABLE
+#if AP_BATTMON_SMBUS_ENABLE
             case Type::SOLO:
                 drivers[instance] = new AP_BattMonitor_SMBus_Solo(*this, state[instance], _params[instance]);
                 break;
@@ -230,7 +248,7 @@ AP_BattMonitor::init()
             case Type::NeoDesign:
                 drivers[instance] = new AP_BattMonitor_SMBus_NeoDesign(*this, state[instance], _params[instance]);
                 break;
-#endif // HAL_BATTMON_SMBUS_ENABLE
+#endif // AP_BATTMON_SMBUS_ENABLE
             case Type::BEBOP:
 #if CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_BEBOP || CONFIG_HAL_BOARD_SUBTYPE == HAL_BOARD_SUBTYPE_LINUX_DISCO
                 drivers[instance] = new AP_BattMonitor_Bebop(*this, state[instance], _params[instance]);
@@ -249,14 +267,14 @@ AP_BattMonitor::init()
             case Type::Sum:
                 drivers[instance] = new AP_BattMonitor_Sum(*this, state[instance], _params[instance], instance);
                 break;
-#if HAL_BATTMON_FUEL_ENABLE
+#if AP_BATTMON_FUEL_ENABLE
             case Type::FuelFlow:
                 drivers[instance] = new AP_BattMonitor_FuelFlow(*this, state[instance], _params[instance]);
                 break;
             case Type::FuelLevel_PWM:
                 drivers[instance] = new AP_BattMonitor_FuelLevel_PWM(*this, state[instance], _params[instance]);
                 break;
-#endif // HAL_BATTMON_FUEL_ENABLE
+#endif // AP_BATTMON_FUEL_ENABLE
 #if HAL_GENERATOR_ENABLED
             case Type::GENERATOR_ELEC:
                 drivers[instance] = new AP_BattMonitor_Generator_Elec(*this, state[instance], _params[instance]);
@@ -356,7 +374,7 @@ void AP_BattMonitor::convert_dynamic_param_groups(uint8_t instance)
         };
 
     for (const auto & elem : conversion_table) {
-        info.old_group_element = token.group_element + ((elem.old_group_element - battmonitor_index) * 64);;
+        info.old_group_element = token.group_element + ((elem.old_group_element - battmonitor_index) * 64);
         info.type = elem.type;
 
         hal.util->snprintf(param_name, sizeof(param_name), "%s_%s", param_prefix, elem.new_name);
@@ -415,6 +433,19 @@ float AP_BattMonitor::voltage_resting_estimate(uint8_t instance) const
 {
     if (instance < _num_instances && drivers[instance] != nullptr) {
         return drivers[instance]->voltage_resting_estimate();
+    } else {
+        return 0.0f;
+    }
+}
+
+/// voltage - returns battery voltage in volts for GCS, may be resting voltage if option enabled
+float AP_BattMonitor::gcs_voltage(uint8_t instance) const
+{
+    if ((_params[instance]._options.get() & uint32_t(AP_BattMonitor_Params::Options::GCS_Resting_Voltage)) != 0) {
+        return voltage_resting_estimate(instance);
+    }
+    if (instance < _num_instances) {
+        return state[instance].voltage;
     } else {
         return 0.0f;
     }

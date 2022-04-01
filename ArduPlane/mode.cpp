@@ -19,6 +19,11 @@ void Mode::exit()
 
 bool Mode::enter()
 {
+#if AP_SCRIPTING_ENABLED
+    // reset nav_scripting.enabled
+    plane.nav_scripting.enabled = false;
+#endif
+
     // cancel inverted flight
     plane.auto_state.inverted_flight = false;
 
@@ -74,6 +79,10 @@ bool Mode::enter()
 
     // initialize speed variable used in AUTO and GUIDED for DO_CHANGE_SPEED commands
     plane.new_airspeed_cm = -1;
+
+#if HAL_QUADPLANE_ENABLED
+    quadplane.mode_enter();
+#endif
 
     bool enter_result = _enter();
 
