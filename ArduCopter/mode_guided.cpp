@@ -16,6 +16,8 @@ struct {
     uint32_t update_time_ms;
     Quaternion attitude_quat;
     Vector3f ang_vel;
+    Vector3f euler_rad;
+    Vector3f euler_rate_rads;
     float yaw_rate_cds;
     float climb_rate_cms;   // climb rate in cms.  Used if use_thrust is false
     float thrust;           // thrust from -1 to 1.  Used if use_thrust is true
@@ -315,6 +317,7 @@ void ModeGuided::angle_control_start()
     guided_angle_state.update_time_ms = millis();
     guided_angle_state.attitude_quat.initialise();
     guided_angle_state.ang_vel.zero();
+    guided_angle_state.euler_rate_rads.zero();
     guided_angle_state.climb_rate_cms = 0.0f;
     guided_angle_state.yaw_rate_cds = 0.0f;
     guided_angle_state.use_yaw_rate = false;
@@ -592,6 +595,13 @@ bool ModeGuided::set_destination_posvelaccel(const Vector3f& destination, const 
     return true;
 }
 
+// returns true if GUIDED_OPTIONS param suggests SET_ATTITUDE_TARGET's "yaw rate" field be used (and attitude's yaw ignored)
+bool ModeGuided::set_attitude_target_ignore_yaw() const
+{
+    return ((copter.g2.guided_options.get() & uint32_t(Options::SetAttitudeTarget_IgnoreYawFromQuat)) != 0);
+}
+
+
 // returns true if GUIDED_OPTIONS param suggests SET_ATTITUDE_TARGET's "thrust" field should be interpreted as thrust instead of climb rate
 bool ModeGuided::set_attitude_target_provides_thrust() const
 {
@@ -634,6 +644,7 @@ void ModeGuided::set_angle(const Quaternion &attitude_quat, const Vector3f &ang_
     guided_angle_state.ang_vel = ang_vel;
 
     guided_angle_state.use_thrust = use_thrust;
+    guided_angle_state.use_yaw_rate = set_attitude_target_ignore_yaw();
     if (use_thrust) {
         guided_angle_state.thrust = climb_rate_cms_or_thrust;
         guided_angle_state.climb_rate_cms = 0.0f;
@@ -647,6 +658,11 @@ void ModeGuided::set_angle(const Quaternion &attitude_quat, const Vector3f &ang_
     // convert quaternion to euler angles
     float roll_rad, pitch_rad, yaw_rad;
     attitude_quat.to_euler(roll_rad, pitch_rad, yaw_rad);
+    guided_angle_state.euler_rad.x = roll_rad;
+    guided_angle_state.euler_rad.y = pitch_rad;
+    guided_angle_state.euler_rad.z = yaw_rad;
+    // convert ang-vel to euler rate (using current euler angles)
+    attitude_control->ang_vel_to_euler_rate( guided_angle_state.euler_rad, guided_angle_state.ang_vel, guided_angle_state.euler_rate_rads );
 
     // log target
     copter.Log_Write_Guided_Attitude_Target(guided_mode, roll_rad, pitch_rad, yaw_rad, ang_vel, guided_angle_state.thrust, guided_angle_state.climb_rate_cms * 0.01);
@@ -961,7 +977,10 @@ void ModeGuided::angle_control_run()
     motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
 
     // call attitude controller
-    if (guided_angle_state.attitude_quat.is_zero()) {
+    if (guided_angle_state.use_yaw_rate) {
+        attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(ToDeg(guided_angle_state.euler_rad.x)*100.0f, ToDeg(guided_angle_state.euler_rad.y)*100.0f, ToDeg(guided_angle_state.euler_rate_rads.z)*100.0f);
+    }
+    else if (guided_angle_state.attitude_quat.is_zero()) {
         attitude_control->input_rate_bf_roll_pitch_yaw(ToDeg(guided_angle_state.ang_vel.x) * 100.0f, ToDeg(guided_angle_state.ang_vel.y) * 100.0f, ToDeg(guided_angle_state.ang_vel.z) * 100.0f);
     } else {
         attitude_control->input_quaternion(guided_angle_state.attitude_quat, guided_angle_state.ang_vel);
@@ -969,7 +988,7 @@ void ModeGuided::angle_control_run()
 
     // call position controller
     if (guided_angle_state.use_thrust) {
-        attitude_control->set_throttle_out(guided_angle_state.thrust, true, copter.g.throttle_filt);
+        attitude_control->set_throttle_out(guided_angle_state.thrust, false, copter.g.throttle_filt);
     } else {
         pos_control->set_pos_target_z_from_climb_rate_cm(climb_rate_cms);
         pos_control->update_z_controller();

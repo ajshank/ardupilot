@@ -1000,6 +1000,8 @@ public:
     const Vector3f& get_target_vel() const;
     const Vector3f& get_target_accel() const;
 
+    // returns true if SET_ATTITUDE_TARGET's yaw field should be ignored (and yaw-rate used instead)
+    bool set_attitude_target_ignore_yaw() const;
     // returns true if GUIDED_OPTIONS param suggests SET_ATTITUDE_TARGET's "thrust" field should be interpreted as thrust instead of climb rate
     bool set_attitude_target_provides_thrust() const;
     bool stabilizing_pos_xy() const;
@@ -1065,6 +1067,8 @@ private:
     enum class Options : int32_t {
         AllowArmingFromTX   = (1U << 0),
         // this bit is still available, pilot yaw was mapped to bit 2 for symmetry with auto
+        // // using this bit now
+        SetAttitudeTarget_IgnoreYawFromQuat = (1U << 1),
         IgnorePilotYaw      = (1U << 2),
         SetAttitudeTarget_ThrustAsThrust = (1U << 3),
         DoNotStabilizePositionXY = (1U << 4),
