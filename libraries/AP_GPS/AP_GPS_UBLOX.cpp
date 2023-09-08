@@ -1475,9 +1475,10 @@ AP_GPS_UBLOX::_parse_gps(void)
 #endif
         break;
 
-#if GPS_MOVING_BASELINE
+
     case MSG_RELPOSNED:
         {
+        #if GPS_MOVING_BASELINE
             if (role != AP_GPS::GPS_ROLE_MB_ROVER) {
                 // ignore RELPOSNED if not configured as a rover
                 break;
@@ -1518,9 +1519,20 @@ AP_GPS_UBLOX::_parse_gps(void)
             } else {
                 state.have_gps_yaw_accuracy = false;
             }
+        #endif // GPS_MOVING_BASELINE
+            const uint32_t nedvalid_mask =  static_cast<uint32_t>(RELPOSNED::relPosValid) |
+                                            static_cast<uint32_t>(RELPOSNED::gnssFixOK);
+            if ( (_buffer.relposned.flags & nedvalid_mask) == nedvalid_mask )
+            {
+                state.rtk_baseline_x_mm = _buffer.relposned.relPosN*10.0 + _buffer.relposned.relPosHPN*0.1;
+                state.rtk_baseline_y_mm = _buffer.relposned.relPosE*10.0 + _buffer.relposned.relPosHPE*0.1;
+                state.rtk_baseline_z_mm = _buffer.relposned.relPosD*10.0 + _buffer.relposned.relPosHPD*0.1;
+                state.rtk_baseline_coords_type = 1;
+                state.rtk_accuracy = (_buffer.relposned.accN + _buffer.relposned.accE + _buffer.relposned.accD)*0.1/3.0;
+            }
         }
         break;
-#endif // GPS_MOVING_BASELINE
+
 
     case MSG_PVT:
         Debug("MSG_PVT");
