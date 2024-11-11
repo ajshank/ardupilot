@@ -77,6 +77,7 @@
 #define RATE_HW 5
 #define RATE_HW2 5
 #define RATE_TIM_TM2 1
+#define RATE_RELPOSNED 1
 
 #define CONFIG_RATE_NAV      (1<<0)
 #define CONFIG_RATE_POSLLH   (1<<1)
@@ -98,13 +99,14 @@
 #define CONFIG_RTK_MOVBASE   (1<<17)
 #define CONFIG_TIM_TM2       (1<<18)
 #define CONFIG_M10           (1<<19)
-#define CONFIG_LAST          (1<<20) // this must always be the last bit
+#define CONFIG_RATE_RELPOSNED (1<<20)
+#define CONFIG_LAST          (1<<21) // this must always be the last bit
 
-#define CONFIG_REQUIRED_INITIAL (CONFIG_RATE_NAV | CONFIG_RATE_POSLLH | CONFIG_RATE_STATUS | CONFIG_RATE_VELNED)
+#define CONFIG_REQUIRED_INITIAL (CONFIG_RATE_NAV | CONFIG_RATE_POSLLH | CONFIG_RATE_STATUS | CONFIG_RATE_VELNED | CONFIG_RATE_RELPOSNED)
 
 #define CONFIG_ALL (CONFIG_RATE_NAV | CONFIG_RATE_POSLLH | CONFIG_RATE_STATUS | CONFIG_RATE_SOL | CONFIG_RATE_VELNED \
                     | CONFIG_RATE_DOP | CONFIG_RATE_MON_HW | CONFIG_RATE_MON_HW2 | CONFIG_RATE_RAW | CONFIG_VERSION \
-                    | CONFIG_NAV_SETTINGS | CONFIG_GNSS | CONFIG_SBAS)
+                    | CONFIG_NAV_SETTINGS | CONFIG_GNSS | CONFIG_SBAS | CONFIG_RATE_RELPOSNED)
 
 //Configuration Sub-Sections
 #define SAVE_CFG_IO     (1<<0)
@@ -738,6 +740,7 @@ private:
         STEP_RTK_MOVBASE, // setup moving baseline
         STEP_TIM_TM2,
         STEP_M10,
+        STEP_RELPOSNED,
         STEP_LAST
     };
 

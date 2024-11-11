@@ -436,7 +436,7 @@ AP_GPS_UBLOX::_request_next_config(void)
         }
         break;
     }
-        
+
     default:
         // this case should never be reached, do a full reset if it is hit
         _next_message = STEP_PVT;
@@ -1478,6 +1478,18 @@ AP_GPS_UBLOX::_parse_gps(void)
 
     case MSG_RELPOSNED:
         {
+            const uint32_t nedvalid_mask =  static_cast<uint32_t>(RELPOSNED::relPosValid) |
+                                            static_cast<uint32_t>(RELPOSNED::gnssFixOK);
+            if ( (_buffer.relposned.flags & nedvalid_mask) == nedvalid_mask )
+            {
+                state.rtk_baseline_x_mm = _buffer.relposned.relPosN*10.0 + _buffer.relposned.relPosHPN*0.1;
+                state.rtk_baseline_y_mm = _buffer.relposned.relPosE*10.0 + _buffer.relposned.relPosHPE*0.1;
+                state.rtk_baseline_z_mm = _buffer.relposned.relPosD*10.0 + _buffer.relposned.relPosHPD*0.1;
+                state.rtk_baseline_coords_type = 0;
+                state.rtk_accuracy = (_buffer.relposned.accN + _buffer.relposned.accE + _buffer.relposned.accD)*0.1/3.0;
+                // abuse integer ambguity count for seeing if we have rtk fix/float mode
+                state.rtk_iar_num_hypotheses = (state.status == AP_GPS::GPS_OK_FIX_3D_RTK_FIXED)? -1 : 13;
+            }
         #if GPS_MOVING_BASELINE
             if (role != AP_GPS::GPS_ROLE_MB_ROVER) {
                 // ignore RELPOSNED if not configured as a rover
@@ -1520,16 +1532,6 @@ AP_GPS_UBLOX::_parse_gps(void)
                 state.have_gps_yaw_accuracy = false;
             }
         #endif // GPS_MOVING_BASELINE
-            const uint32_t nedvalid_mask =  static_cast<uint32_t>(RELPOSNED::relPosValid) |
-                                            static_cast<uint32_t>(RELPOSNED::gnssFixOK);
-            if ( (_buffer.relposned.flags & nedvalid_mask) == nedvalid_mask )
-            {
-                state.rtk_baseline_x_mm = _buffer.relposned.relPosN*10.0 + _buffer.relposned.relPosHPN*0.1;
-                state.rtk_baseline_y_mm = _buffer.relposned.relPosE*10.0 + _buffer.relposned.relPosHPE*0.1;
-                state.rtk_baseline_z_mm = _buffer.relposned.relPosD*10.0 + _buffer.relposned.relPosHPD*0.1;
-                state.rtk_baseline_coords_type = 1;
-                state.rtk_accuracy = (_buffer.relposned.accN + _buffer.relposned.accE + _buffer.relposned.accD)*0.1/3.0;
-            }
         }
         break;
 
@@ -2013,7 +2015,8 @@ static const char *reasons[] = {"navigation rate",
                                 "Time mode settings",
                                 "RTK MB",
                                 "TIM TM2",
-                                "M10"};
+                                "M10",
+                                "Relposned"};
 
 static_assert((1 << ARRAY_SIZE(reasons)) == CONFIG_LAST, "UBLOX: Missing configuration description");
 

@@ -209,7 +209,7 @@ void AP_GPS_Backend::send_mavlink_gps_rtk(mavlink_channel_t chan)
                                  0,  // Not implemented yet
                                  state.rtk_week_number,
                                  state.rtk_time_week_ms,
-                                 0,  // Not implemented yet
+                                 state.status,  // Not implemented yet  // @aj: define health to mean status
                                  0,  // Not implemented yet
                                  state.rtk_num_sats,
                                  state.rtk_baseline_coords_type,
