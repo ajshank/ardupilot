@@ -23,6 +23,7 @@ struct {
     float thrust;           // thrust from -1 to 1.  Used if use_thrust is true
     bool use_yaw_rate;
     bool use_thrust;
+    bool is_timedout;
 } static guided_angle_state;
 
 struct Guided_Limit {
@@ -320,7 +321,9 @@ void ModeGuided::angle_control_start()
     guided_angle_state.euler_rate_rads.zero();
     guided_angle_state.climb_rate_cms = 0.0f;
     guided_angle_state.yaw_rate_cds = 0.0f;
-    guided_angle_state.use_yaw_rate = false;
+    guided_angle_state.thrust = 0.0f;
+    guided_angle_state.use_yaw_rate = set_attitude_target_ignore_yaw();
+    guided_angle_state.use_thrust = set_attitude_target_provides_thrust();
 
     // pilot always controls yaw
     auto_yaw.set_mode(AutoYaw::Mode::HOLD);
@@ -654,6 +657,7 @@ void ModeGuided::set_angle(const Quaternion &attitude_quat, const Vector3f &ang_
     }
 
     guided_angle_state.update_time_ms = millis();
+    guided_angle_state.is_timedout = false;
 
     // convert quaternion to euler angles
     float roll_rad, pitch_rad, yaw_rad;
@@ -938,13 +942,16 @@ void ModeGuided::angle_control_run()
     // check for timeout - set lean angles and climb rate to zero if no updates received for 3 seconds
     uint32_t tnow = millis();
     if (tnow - guided_angle_state.update_time_ms > get_timeout_ms()) {
+        guided_angle_state.is_timedout = true;
         guided_angle_state.attitude_quat.initialise();
         guided_angle_state.ang_vel.zero();
         climb_rate_cms = 0.0f;
         if (guided_angle_state.use_thrust) {
             // initialise vertical velocity controller
             pos_control->init_z_controller();
+            pos_control->init_xy_controller();
             guided_angle_state.use_thrust = false;
+            //gcs().send_text(MAV_SEVERITY_WARNING, "Mavlink Timeout!");
         }
     }
 
@@ -969,6 +976,7 @@ void ModeGuided::angle_control_run()
         if (motors->get_spool_state() == AP_Motors::SpoolState::THROTTLE_UNLIMITED) {
             set_land_complete(false);
             pos_control->init_z_controller();
+            gcs().send_text(MAV_SEVERITY_WARNING, "AC:init-z.alt-hold - this should not happen!");
         }
         return;
     }
@@ -976,14 +984,20 @@ void ModeGuided::angle_control_run()
     // set motors to full range
     motors->set_desired_spool_state(AP_Motors::DesiredSpoolState::THROTTLE_UNLIMITED);
 
-    // call attitude controller
-    if (guided_angle_state.use_yaw_rate) {
-        attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(ToDeg(guided_angle_state.euler_rad.x)*100.0f, ToDeg(guided_angle_state.euler_rad.y)*100.0f, ToDeg(guided_angle_state.euler_rate_rads.z)*100.0f);
+    if( !guided_angle_state.is_timedout )
+    {// call attitude controller
+        if (guided_angle_state.use_yaw_rate) {
+            attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(ToDeg(guided_angle_state.euler_rad.x)*100.0f, ToDeg(guided_angle_state.euler_rad.y)*100.0f, ToDeg(guided_angle_state.euler_rate_rads.z)*100.0f);
+        }
+        else if (guided_angle_state.attitude_quat.is_zero()) {
+            attitude_control->input_rate_bf_roll_pitch_yaw(ToDeg(guided_angle_state.ang_vel.x) * 100.0f, ToDeg(guided_angle_state.ang_vel.y) * 100.0f, ToDeg(guided_angle_state.ang_vel.z) * 100.0f);
+        } else {
+            attitude_control->input_quaternion(guided_angle_state.attitude_quat, guided_angle_state.ang_vel);
+        }
     }
-    else if (guided_angle_state.attitude_quat.is_zero()) {
-        attitude_control->input_rate_bf_roll_pitch_yaw(ToDeg(guided_angle_state.ang_vel.x) * 100.0f, ToDeg(guided_angle_state.ang_vel.y) * 100.0f, ToDeg(guided_angle_state.ang_vel.z) * 100.0f);
-    } else {
-        attitude_control->input_quaternion(guided_angle_state.attitude_quat, guided_angle_state.ang_vel);
+    else
+    {
+        pos_control->update_xy_controller();
     }
 
     // call position controller
